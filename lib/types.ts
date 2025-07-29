@@ -2,12 +2,12 @@ export interface Document {
   id: string;
   content: string;
   metadata?: Record<string, any>;
-  embedding?: number[];
+  embedding?: number[] | string; // Can be string when retrieved from database
   created_at?: string;
 }
 
 export interface SearchResult extends Document {
-  distance: number;
+  similarity: number;
 }
 
 export interface EmbeddingResponse {

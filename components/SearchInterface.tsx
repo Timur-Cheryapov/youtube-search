@@ -46,14 +46,30 @@ export function SearchInterface({ onSearch, isLoading }: SearchInterfaceProps) {
     }
   };
 
-  const formatEmbedding = (embedding?: number[], isExpanded: boolean = false) => {
-    if (!embedding || embedding.length === 0) return 'No embedding data';
+  const formatEmbedding = (embedding?: number[] | string, isExpanded: boolean = false) => {
+    if (!embedding) return 'No embedding data';
+    
+    // Handle case where embedding is stored as a string in the database
+    let embeddingArray: number[];
+    if (typeof embedding === 'string') {
+      try {
+        embeddingArray = JSON.parse(embedding);
+      } catch {
+        return 'Invalid embedding data';
+      }
+    } else {
+      embeddingArray = embedding;
+    }
+    
+    if (!Array.isArray(embeddingArray) || embeddingArray.length === 0) {
+      return 'No embedding data';
+    }
     
     if (isExpanded) {
-      return `[${embedding.map(val => val.toFixed(4)).join(', ')}]`;
+      return `[${embeddingArray.map(val => val.toFixed(4)).join(', ')}]`;
     } else {
-      const preview = embedding.slice(0, 3).map(val => val.toFixed(4)).join(', ');
-      return `[${preview}...] (${embedding.length} dimensions)`;
+      const preview = embeddingArray.slice(0, 3).map(val => val.toFixed(4)).join(', ');
+      return `[${preview}...] (${embeddingArray.length} dimensions)`;
     }
   };
 
@@ -112,7 +128,7 @@ export function SearchInterface({ onSearch, isLoading }: SearchInterfaceProps) {
                         </CardDescription>
                       </div>
                       <Badge variant="secondary">
-                        {(1 - result.distance).toFixed(3)} similarity
+                        {result.similarity.toFixed(3)} similarity
                       </Badge>
                     </div>
                   </CardHeader>
@@ -129,12 +145,8 @@ export function SearchInterface({ onSearch, isLoading }: SearchInterfaceProps) {
                         <p>{formatDate(result.created_at)}</p>
                       </div>
                       <div>
-                        <span className="font-medium text-muted-foreground">Distance:</span>
-                        <p>{result.distance.toFixed(6)}</p>
-                      </div>
-                      <div>
-                        <span className="font-medium text-muted-foreground">Similarity Score:</span>
-                        <p>{(1 - result.distance).toFixed(6)}</p>
+                        <span className="font-medium text-muted-foreground">Similarity:</span>
+                        <p>{result.similarity.toFixed(6)}</p>
                       </div>
                     </div>
 

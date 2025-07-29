@@ -11,7 +11,7 @@ export interface SearchOptions {
 export async function searchDocuments({
   query,
   limit = 10,
-  matchThreshold = 0.8
+  matchThreshold = 0
 }: SearchOptions): Promise<SearchResult[]> {
   try {
     if (!query || typeof query !== 'string') {

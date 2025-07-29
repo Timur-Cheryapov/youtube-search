@@ -72,7 +72,7 @@ RETURNS TABLE(
   metadata JSONB,
   embedding VECTOR(384),
   created_at TIMESTAMP WITH TIME ZONE,
-  distance FLOAT
+  similarity FLOAT
 )
 LANGUAGE plpgsql
 AS $$
@@ -84,7 +84,7 @@ BEGIN
     documents.metadata,
     documents.embedding,
     documents.created_at,
-    (documents.embedding <#> query_embedding) * -1 AS distance
+    (documents.embedding <#> query_embedding) * -1 AS similarity
   FROM documents
   WHERE (documents.embedding <#> query_embedding) * -1 > match_threshold
   ORDER BY documents.embedding <#> query_embedding
