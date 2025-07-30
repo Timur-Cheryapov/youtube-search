@@ -2,110 +2,63 @@
 
 import { useState } from 'react';
 import { SearchResult } from '@/lib/types';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { VideoCard } from '@/components/VideoCard';
+import { Search, Loader2 } from 'lucide-react';
 
 interface SearchInterfaceProps {
   onSearch: (query: string) => Promise<SearchResult[]>;
   isLoading: boolean;
+  hasSearched: boolean;
+  onSearchStart: () => void;
 }
 
-export function SearchInterface({ onSearch, isLoading }: SearchInterfaceProps) {
+export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStart }: SearchInterfaceProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [expandedEmbeddings, setExpandedEmbeddings] = useState<Set<string>>(new Set());
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
 
-    setHasSearched(true);
+    onSearchStart();
     const searchResults = await onSearch(query.trim());
     setResults(searchResults);
   };
 
-  const toggleEmbedding = (resultId: string) => {
-    const newExpanded = new Set(expandedEmbeddings);
-    if (newExpanded.has(resultId)) {
-      newExpanded.delete(resultId);
-    } else {
-      newExpanded.add(resultId);
-    }
-    setExpandedEmbeddings(newExpanded);
-  };
-
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return 'N/A';
-    try {
-      return new Date(dateString).toLocaleString();
-    } catch {
-      return dateString;
-    }
-  };
-
-  const formatEmbedding = (embedding?: number[] | string, isExpanded: boolean = false) => {
-    if (!embedding) return 'No embedding data';
-    
-    // Handle case where embedding is stored as a string in the database
-    let embeddingArray: number[];
-    if (typeof embedding === 'string') {
-      try {
-        embeddingArray = JSON.parse(embedding);
-      } catch {
-        return 'Invalid embedding data';
-      }
-    } else {
-      embeddingArray = embedding;
-    }
-    
-    if (!Array.isArray(embeddingArray) || embeddingArray.length === 0) {
-      return 'No embedding data';
-    }
-    
-    if (isExpanded) {
-      return `[${embeddingArray.map(val => val.toFixed(4)).join(', ')}]`;
-    } else {
-      const preview = embeddingArray.slice(0, 3).map(val => val.toFixed(4)).join(', ');
-      return `[${preview}...] (${embeddingArray.length} dimensions)`;
-    }
-  };
-
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6">
+    <div className="w-full">
       {/* Search Form */}
-      <form onSubmit={handleSearch} className="flex gap-2">
-        <Input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Enter your search query..."
-          disabled={isLoading}
-          className="flex-1"
-        />
-        <Button 
-          type="submit" 
-          disabled={isLoading || !query.trim()}
-        >
-          {isLoading ? 'Searching...' : 'Search'}
-        </Button>
-      </form>
+      <div className={`max-w-6xl mx-auto transition-all duration-300 ease-in-out ${hasSearched ? 'px-4' : ''}`}>
+        <form onSubmit={handleSearch} className="relative">
+          <div className="relative flex items-center">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search YouTube videos with AI..."
+              disabled={isLoading}
+              className="w-full h-16 text-xl px-8 pr-20 rounded-full border-2 border-black bg-white focus:outline-none focus:ring-0 focus:border-black transition-all duration-200"
+            />
+            <button
+              type="submit"
+              disabled={isLoading || !query.trim()}
+              className="absolute right-2 h-12 w-12 rounded-full bg-white text-black flex items-center justify-center transition-colors duration-200 cursor-pointer"
+            >
+              {isLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                <Search className="h-6 w-6" />
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
 
       {/* Results */}
       {hasSearched && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">
-              Search Results
-            </h2>
-            <span className="text-sm text-muted-foreground">
-              {results.length} result{results.length !== 1 ? 's' : ''} found
-            </span>
-          </div>
-
-          {results.length === 0 ? (
+        <div className="max-w-6xl mx-auto px-4 mt-8 space-y-6 pb-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          {results.length === 0 && !isLoading ? (
             <Card>
               <CardContent className="text-center py-8">
                 <p className="text-muted-foreground">
@@ -114,81 +67,13 @@ export function SearchInterface({ onSearch, isLoading }: SearchInterfaceProps) {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {results.map((result, index) => (
-                <Card key={result.id || index}>
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 space-y-2">
-                        <CardTitle className="text-base font-medium">
-                          Document Content
-                        </CardTitle>
-                        <CardDescription className="text-sm">
-                          {result.content}
-                        </CardDescription>
-                      </div>
-                      <Badge variant="secondary">
-                        {result.similarity.toFixed(3)} similarity
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  
-                  <CardContent className="space-y-4">
-                    {/* Document Details */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="font-medium text-muted-foreground">Document ID:</span>
-                        <p className="font-mono text-xs break-all">{result.id || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <span className="font-medium text-muted-foreground">Created:</span>
-                        <p>{formatDate(result.created_at)}</p>
-                      </div>
-                      <div>
-                        <span className="font-medium text-muted-foreground">Similarity:</span>
-                        <p>{result.similarity.toFixed(6)}</p>
-                      </div>
-                    </div>
-
-                    {/* Metadata */}
-                    {result.metadata && Object.keys(result.metadata).length > 0 && (
-                      <div>
-                        <span className="font-medium text-muted-foreground text-sm">Metadata:</span>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {Object.entries(result.metadata).map(([key, value]) => (
-                            <Badge key={key} variant="outline">
-                              {key}: {String(value)}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Embedding */}
-                    {result.embedding && (
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-muted-foreground text-sm">
-                            Embedding Vector:
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleEmbedding(result.id || index.toString())}
-                          >
-                            {expandedEmbeddings.has(result.id || index.toString()) ? 'Hide' : 'Show'}
-                          </Button>
-                        </div>
-                        <div className="mt-2 p-2 bg-muted rounded text-xs font-mono break-all">
-                          {formatEmbedding(
-                            result.embedding, 
-                            expandedEmbeddings.has(result.id || index.toString())
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                <VideoCard 
+                  key={result.id || index} 
+                  result={result} 
+                  index={index} 
+                />
               ))}
             </div>
           )}
