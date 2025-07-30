@@ -19,11 +19,17 @@ MEMORY_WARNING_THRESHOLD = 85.0  # Percentage of total RAM
 MEMORY_CRITICAL_THRESHOLD = 95.0  # Percentage of total RAM
 BASE_MEMORY_PER_VIDEO = 30.0  # MB per video for batch size calculation
 
-# File paths
+# File paths (legacy - for backup/fallback only)
 PROCESSED_CHANNELS_FILE = "./crawler/processed_channels.json"
 OUTPUT_FILE = "./crawler/youtube_videos_with_embeddings.json"
 BACKUP_FILE_PREFIX = "./crawler/youtube_videos_backup"
 CHUNK_FILE_PREFIX = "./crawler/youtube_videos_chunk"
+
+# Supabase integration settings
+SUPABASE_ENABLED = True  # Set to False to use legacy JSON file mode
+SUPABASE_BATCH_SIZE = 100  # Number of documents to upload in each batch
+SUPABASE_DOCUMENTS_TABLE = "documents"  # Table for video documents
+SUPABASE_CHANNEL_STATS_TABLE = "channel_upload_stats"  # Table for channel statistics
 
 # Search queries for automated mode
 SEARCH_QUERIES = [

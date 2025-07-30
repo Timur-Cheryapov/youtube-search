@@ -53,8 +53,14 @@ try:
         is_channel_processed, 
         mark_channel_processed,
         save_results_with_fallback,
-        save_periodic_backup
+        save_periodic_backup,
+        load_processed_channels_from_supabase,
+        is_channel_processed_supabase,
+        mark_channel_processed_supabase,
+        save_results_with_supabase_fallback,
+        upload_channel_to_supabase
     )
+    from .supabase_client import create_supabase_client
     from . import config
 except ImportError:
     # Fall back to absolute imports (when run directly)
@@ -74,13 +80,32 @@ except ImportError:
         is_channel_processed, 
         mark_channel_processed,
         save_results_with_fallback,
-        save_periodic_backup
+        save_periodic_backup,
+        load_processed_channels_from_supabase,
+        is_channel_processed_supabase,
+        mark_channel_processed_supabase,
+        save_results_with_supabase_fallback,
+        upload_channel_to_supabase
     )
+    from supabase_client import create_supabase_client
     import config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Load environment variables from parent directory
+try:
+    from dotenv import load_dotenv
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    env_file = os.path.join(parent_dir, '.env.local')
+    if os.path.exists(env_file):
+        load_dotenv(env_file)
+        logger.info(f"📁 Environment variables loaded from {env_file}")
+except Exception as e:
+    logger.warning(f"⚠️  Could not load .env.local: {e}")
 
 # Global memory monitor instance
 memory_monitor = MemoryMonitor(
@@ -256,8 +281,17 @@ async def automated_crawler_async():
         logger.error("🚨 Insufficient memory to start crawler safely")
         return
     
-    # Load processed channels
-    processed_channels = load_processed_channels()
+    # Initialize Supabase client (if enabled)
+    supabase_client = create_supabase_client()
+    if supabase_client:
+        logger.info("🔌 Supabase integration enabled - data will be saved directly to database")
+        db_stats = supabase_client.get_database_stats()
+        logger.info(f"📊 Current database: {db_stats['total_videos']} videos, {db_stats['total_channels']} channels")
+    else:
+        logger.info("📝 Using legacy JSON file mode")
+    
+    # Load processed channels (from Supabase or JSON)
+    processed_channels = load_processed_channels_from_supabase(supabase_client)
     
     # Initialize the embedder (this loads the models)
     logger.info("🚀 Initializing video embedder...")
@@ -290,12 +324,16 @@ async def automated_crawler_async():
             # Process each channel found
             for channel_info in channels:
                 channel_id = channel_info['channel_id']
+                channel_url = channel_info['channel_url']
                 channel_name = channel_info['channel_name']
                 
-                # Check if already processed
-                if is_channel_processed(channel_id, processed_channels):
-                    logger.info(f"⏭️  Skipping already processed channel: {channel_name}")
+                # Check if already processed (using channel_url, which is what we store)
+                if is_channel_processed_supabase(channel_url, supabase_client, processed_channels):
+                    logger.info(f"⏭️  Skipping already processed channel: {channel_name} ({channel_url})")
                     continue
+                
+                # Additional debug info
+                logger.info(f"🔍 Processing new channel: {channel_name} ({channel_url})")
                 
                 # Memory check before processing each channel
                 if not memory_monitor.check_and_handle_memory(f"before_channel_{channel_name}"):
@@ -305,9 +343,11 @@ async def automated_crawler_async():
                     # Save progress before stopping due to memory
                     if all_results:
                         partial_file = config.OUTPUT_FILE.replace(".json", "_partial.json")
-                        save_results_with_fallback(all_results, partial_file)
+                        save_results_with_supabase_fallback(all_results, supabase_client, partial_file)
                     
-                    save_processed_channels(processed_channels)
+                    # Save processed channels (JSON fallback only - Supabase is updated in real-time)
+                    if not supabase_client:
+                        save_processed_channels(processed_channels)
                     logger.error("🚨 Stopping due to memory constraints")
                     return
                 
@@ -316,19 +356,32 @@ async def automated_crawler_async():
                     video_results = await process_channel_videos_async(channel_info, embedder, config.VIDEO_LIMIT_PER_CHANNEL)
                     
                     if video_results:
-                        # Store results with channel URL as key
                         channel_url = channel_info['channel_url']
-                        all_results[channel_url] = video_results
                         
-                        # Mark as processed
-                        mark_channel_processed(channel_info, processed_channels, len(video_results))
+                        # Immediately upload videos to Supabase (if enabled)
+                        if supabase_client:
+                            logger.info(f"⬆️  Immediately uploading {len(video_results)} videos from {channel_name} to Supabase...")
+                            upload_success = upload_channel_to_supabase(supabase_client, channel_info, video_results)
+                            
+                            if upload_success:
+                                logger.info(f"✅ Successfully uploaded {channel_name} to Supabase")
+                            else:
+                                logger.warning(f"⚠️  Failed to upload {channel_name} to Supabase")
+                                # Store in all_results as fallback for JSON backup
+                                all_results[channel_url] = video_results
+                        else:
+                            # Store results for JSON file save (legacy mode)
+                            all_results[channel_url] = video_results
+                        
+                        # Mark as processed in memory cache (stats already saved during upload for Supabase)
+                        mark_channel_processed_supabase(channel_info, len(video_results), supabase_client, processed_channels)
                         total_channels_processed += 1
                         total_videos_processed += len(video_results)
                         
-                        logger.info(f"✅ Completed async processing channel: {channel_name} ({len(video_results)} videos)")
+                        logger.info(f"✅ Completed processing channel: {channel_name} ({len(video_results)} videos)")
                         
-                        # Periodic save to prevent data loss
-                        if total_channels_processed % config.PERIODIC_SAVE_INTERVAL == 0:
+                        # Periodic save to prevent data loss (only for JSON mode)
+                        if not supabase_client and total_channels_processed % config.PERIODIC_SAVE_INTERVAL == 0:
                             logger.info("💾 Saving periodic backup...")
                             save_periodic_backup(all_results, total_channels_processed)
                             save_processed_channels(processed_channels)
@@ -360,26 +413,43 @@ async def automated_crawler_async():
         logger.warning("⚠️  High memory usage detected before saving. Attempting cleanup...")
         memory_monitor.force_cleanup()
     
-    # Save all results with fallback
-    success = save_results_with_fallback(all_results, config.OUTPUT_FILE)
-    
-    # Save processed channels
-    try:
-        save_processed_channels(processed_channels)
-        logger.info(f"📝 Channel tracking saved to: {config.PROCESSED_CHANNELS_FILE}")
-    except Exception as e:
-        logger.error(f"❌ Failed to save processed channels: {e}")
+    # Save final results and cleanup
+    if supabase_client:
+        # All data already uploaded immediately during processing
+        final_db_stats = supabase_client.get_database_stats()
+        logger.info(f"📊 Final database: {final_db_stats['total_videos']} videos, {final_db_stats['total_channels']} channels")
+        
+        # Save JSON backup if there were any failed uploads
+        if all_results:
+            logger.info("💾 Saving JSON backup for failed uploads...")
+            save_results_with_fallback(all_results, config.OUTPUT_FILE.replace(".json", "_failed_uploads.json"))
+        success = True
+    else:
+        # JSON mode - save all collected results
+        success = save_results_with_fallback(all_results, config.OUTPUT_FILE)
+        
+        # Save processed channels (only needed for JSON mode)
+        try:
+            save_processed_channels(processed_channels)
+            logger.info(f"📝 Channel tracking saved to: {config.PROCESSED_CHANNELS_FILE}")
+        except Exception as e:
+            logger.error(f"❌ Failed to save processed channels: {e}")
     
     # Final memory status and cleanup
     memory_monitor.force_cleanup()
     memory_monitor.log_memory_status("final")
     
     # Final summary
-    logger.info(f"\n🎉 Async automated crawling complete!")
+    logger.info(f"\n🎉 Automated crawling complete!")
     logger.info(f"📊 Processed {total_channels_processed} channels")
     logger.info(f"📹 Total videos with embeddings: {total_videos_processed}")
-    if success:
-        logger.info(f"💾 Results saved to: {config.OUTPUT_FILE}")
+    if supabase_client:
+        logger.info(f"⬆️  Videos uploaded immediately to Supabase during processing")
+        if all_results:
+            logger.info(f"💾 Failed uploads backup saved to: {config.OUTPUT_FILE.replace('.json', '_failed_uploads.json')}")
+    else:
+        if success:
+            logger.info(f"💾 Results saved to: {config.OUTPUT_FILE}")
     
     # Memory usage summary
     final_stats = memory_monitor.get_memory_usage()
@@ -394,6 +464,13 @@ def automated_crawler():
 async def manual_crawler_async():
     """Async manual crawler for processing a single channel URL"""
     url = input("Enter YouTube channel URL: ").strip()
+    
+    # Initialize Supabase client (if enabled)
+    supabase_client = create_supabase_client()
+    if supabase_client:
+        logger.info("🔌 Supabase integration enabled - data will be saved directly to database")
+    else:
+        logger.info("📝 Using legacy JSON file mode")
     
     # Initialize the embedder with memory checks
     logger.info("🚀 Initializing video embedder...")
@@ -413,12 +490,29 @@ async def manual_crawler_async():
         # Process the channel asynchronously
         results = await process_channel_videos_async(channel_info, embedder, config.VIDEO_LIMIT_MANUAL_MODE)
         
-        # Save results
-        output = {url: results}
-        save_results_with_fallback(output, config.OUTPUT_FILE)
-        
-        logger.info(f"✅ Async manual processing complete!")
-        logger.info(f"💾 Saved {len(results)} videos to {config.OUTPUT_FILE}")
+        if results:
+            # Immediately upload videos to Supabase (if enabled)
+            if supabase_client:
+                logger.info(f"⬆️  Immediately uploading {len(results)} videos to Supabase...")
+                upload_success = upload_channel_to_supabase(supabase_client, channel_info, results)
+                
+                if upload_success:
+                    logger.info(f"✅ Successfully uploaded videos to Supabase")
+                    db_stats = supabase_client.get_database_stats()
+                    logger.info(f"📊 Database now contains: {db_stats['total_videos']} videos, {db_stats['total_channels']} channels")
+                else:
+                    logger.warning(f"⚠️  Failed to upload to Supabase, saving to JSON as fallback")
+                    output = {url: results}
+                    save_results_with_fallback(output, config.OUTPUT_FILE)
+            else:
+                # Save to JSON file (legacy mode)
+                output = {url: results}
+                save_results_with_fallback(output, config.OUTPUT_FILE)
+            
+            logger.info(f"✅ Manual processing complete!")
+            logger.info(f"💾 Processed {len(results)} videos")
+        else:
+            logger.warning(f"❌ No videos extracted from channel")
         
     finally:
         # Cleanup async resources
