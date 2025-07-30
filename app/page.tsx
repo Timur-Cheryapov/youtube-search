@@ -9,11 +9,13 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const handleSearch = async (query: string): Promise<SearchResult[]> => {
+  const handleSearch = async (query: string, offset: number = 0): Promise<SearchResult[]> => {
     setIsLoading(true);
-    setHasSearched(true);
+    if (offset === 0) {
+      setHasSearched(true);
+    }
     try {
-      const results = await searchDocuments({ query, limit: 10 });
+      const results = await searchDocuments({ query, limit: 10, offset_count: offset });
       return results;
     } catch (error) {
       console.error('Search error:', error);

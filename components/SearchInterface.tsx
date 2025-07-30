@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { SearchResult } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { VideoCard } from '@/components/VideoCard';
 import { Search, Loader2 } from 'lucide-react';
 
 interface SearchInterfaceProps {
-  onSearch: (query: string) => Promise<SearchResult[]>;
+  onSearch: (query: string, offset?: number) => Promise<SearchResult[]>;
   isLoading: boolean;
   hasSearched: boolean;
   onSearchStart: () => void;
@@ -16,15 +16,87 @@ interface SearchInterfaceProps {
 export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStart }: SearchInterfaceProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [currentOffset, setCurrentOffset] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreResults, setHasMoreResults] = useState(true);
+  const [currentQuery, setCurrentQuery] = useState('');
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
 
+    // Reset pagination state for new search
+    setCurrentOffset(0);
+    setHasMoreResults(true);
+    setCurrentQuery(query.trim());
     onSearchStart();
-    const searchResults = await onSearch(query.trim());
+    
+    const searchResults = await onSearch(query.trim(), 0);
     setResults(searchResults);
+    
+    // If we got less than the limit (10), there are no more results
+    if (searchResults.length < 10) {
+      setHasMoreResults(false);
+    }
   };
+
+  const loadMoreResults = useCallback(async () => {
+    if (isLoadingMore || !hasMoreResults || !currentQuery) return;
+    
+    setIsLoadingMore(true);
+    const nextOffset = currentOffset + 10;
+    
+    try {
+      const moreResults = await onSearch(currentQuery, nextOffset);
+      
+      if (moreResults.length === 0) {
+        setHasMoreResults(false);
+      } else {
+        setResults(prev => [...prev, ...moreResults]);
+        setCurrentOffset(nextOffset);
+        
+        // If we got less than the limit, there are no more results
+        if (moreResults.length < 10) {
+          setHasMoreResults(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading more results:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, hasMoreResults, currentQuery, currentOffset, onSearch]);
+
+  // Infinite scroll handler
+  const handleScroll = useCallback(() => {
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    
+    scrollTimeoutRef.current = setTimeout(() => {
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+      
+      // Load more when user is within 200px of the bottom
+      if (scrollTop + windowHeight >= documentHeight - 200) {
+        loadMoreResults();
+      }
+    }, 100);
+  }, [loadMoreResults]);
+
+  useEffect(() => {
+    if (hasSearched && results.length > 0) {
+      window.addEventListener('scroll', handleScroll);
+      return () => {
+        window.removeEventListener('scroll', handleScroll);
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+      };
+    }
+  }, [hasSearched, results.length, handleScroll]);
 
   return (
     <div className="w-full">
@@ -75,6 +147,29 @@ export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStar
                   index={index} 
                 />
               ))}
+              
+              {/* Loading more indicator */}
+              {isLoadingMore && (
+                <Card>
+                  <CardContent className="text-center py-8">
+                    <div className="flex items-center justify-center space-x-2">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <p className="text-muted-foreground">Loading more results...</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              
+              {/* End of results indicator */}
+              {!hasMoreResults && results.length > 0 && (
+                <Card>
+                  <CardContent className="text-center py-6">
+                    <p className="text-muted-foreground text-sm">
+                      You've reached the end of the results.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </div>

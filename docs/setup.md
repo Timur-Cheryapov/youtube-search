@@ -60,11 +60,12 @@ CREATE INDEX ON documents USING ivfflat (embedding vector_cosine_ops) WITH (list
 5. **Create the search function**:
 
 ```sql
--- Function to search documents by vector similarity
+-- Function to search documents by vector similarity with pagination support
 CREATE OR REPLACE FUNCTION search_documents(
   query_embedding VECTOR(384),
   match_threshold FLOAT DEFAULT 0.8,
-  match_count INT DEFAULT 10
+  match_count INT DEFAULT 10,
+  offset_count INT DEFAULT 0
 )
 RETURNS TABLE(
   id UUID,
@@ -88,7 +89,8 @@ BEGIN
   FROM documents
   WHERE (documents.embedding <#> query_embedding) * -1 > match_threshold
   ORDER BY documents.embedding <#> query_embedding
-  LIMIT match_count;
+  LIMIT match_count
+  OFFSET offset_count;
 END;
 $$;
 ```

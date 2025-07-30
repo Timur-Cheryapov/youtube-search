@@ -6,12 +6,14 @@ export interface SearchOptions {
   query: string;
   limit?: number;
   matchThreshold?: number;
+  offset_count?: number;
 }
 
 export async function searchDocuments({
   query,
   limit = 10,
-  matchThreshold = 0
+  matchThreshold = 0,
+  offset_count = 0
 }: SearchOptions): Promise<SearchResult[]> {
   try {
     if (!query || typeof query !== 'string') {
@@ -26,7 +28,8 @@ export async function searchDocuments({
       .rpc('search_documents', {
         query_embedding: queryEmbedding,
         match_threshold: matchThreshold,
-        match_count: limit
+        match_count: limit,
+        offset_count: offset_count
       });
 
     if (error) {
