@@ -136,8 +136,8 @@ Main content:"""
                 response = self.content_tokenizer.decode(outputs[0], skip_special_tokens=True)
                 
                 # Extract just the assistant's response (after the prompt)
-                if "Main content:" in response or "assistant" in response:
-                    result = response.split("Main content:")[-1].strip()
+                if "The main content of the YouTube video" in response or "assistant" in response:
+                    result = response.split("The main content of the YouTube video")[-1].strip()
                     result = result.split("assistant")[-1].strip()
                 else:
                     # Fallback: take the last part after user message
@@ -258,3 +258,117 @@ Main content:"""
         except Exception as e:
             logger.error(f"Error generating embedding: {str(e)}")
             return []
+    
+    def generate_embeddings_batch(self, texts: List[str], batch_size: int = None) -> List[List[float]]:
+        """
+        Generate embeddings for multiple texts in batches for better performance
+        
+        Args:
+            texts: List of texts to embed
+            batch_size: Size of batches (defaults to config value)
+            
+        Returns:
+            List of embedding vectors (may contain empty lists for failed embeddings)
+        """
+        if batch_size is None:
+            batch_size = config.EMBEDDING_BATCH_SIZE
+            
+        logger.info(f"🚀 Processing {len(texts)} embeddings in batches of {batch_size}")
+        
+        embeddings = []
+        
+        # Process texts in batches
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+            
+            # Filter out empty texts and keep track of indices
+            valid_texts = []
+            valid_indices = []
+            
+            for j, text in enumerate(batch_texts):
+                if text and text.strip():
+                    valid_texts.append(text.strip())
+                    valid_indices.append(i + j)
+            
+            if not valid_texts:
+                # Add empty embeddings for this batch
+                embeddings.extend([[] for _ in batch_texts])
+                continue
+                
+            try:
+                # Memory check before processing batch
+                if self.memory_monitor:
+                    if not self.memory_monitor.check_and_handle_memory(f"embedding_batch_{i//batch_size + 1}"):
+                        logger.warning(f"⚠️  Memory constraints detected. Processing smaller batch.")
+                        # Fall back to individual processing for this batch
+                        batch_embeddings = []
+                        for text in batch_texts:
+                            batch_embeddings.append(self.generate_embedding(text))
+                        embeddings.extend(batch_embeddings)
+                        continue
+                
+                # Generate embeddings for the batch
+                logger.debug(f"Processing embedding batch {i//batch_size + 1}/{(len(texts) + batch_size - 1)//batch_size} ({len(valid_texts)} valid texts)")
+                
+                # Use sentence transformer's batch processing
+                batch_embeddings = self.embedding_model.encode(
+                    valid_texts, 
+                    show_progress_bar=False,
+                    batch_size=min(len(valid_texts), batch_size)
+                )
+                
+                # Map embeddings back to original positions
+                result_batch = []
+                valid_idx = 0
+                
+                for j, text in enumerate(batch_texts):
+                    if text and text.strip():
+                        # Valid text - use generated embedding
+                        embedding = batch_embeddings[valid_idx].tolist()
+                        result_batch.append(embedding)
+                        valid_idx += 1
+                    else:
+                        # Empty text - use empty embedding
+                        result_batch.append([])
+                
+                embeddings.extend(result_batch)
+                
+            except Exception as e:
+                logger.error(f"Error generating batch embeddings for batch {i//batch_size + 1}: {str(e)}")
+                # Fall back to individual processing for this batch
+                batch_embeddings = []
+                for text in batch_texts:
+                    batch_embeddings.append(self.generate_embedding(text))
+                embeddings.extend(batch_embeddings)
+        
+        successful_embeddings = sum(1 for emb in embeddings if emb)
+        logger.info(f"✅ Batch embedding complete: {successful_embeddings}/{len(texts)} successful")
+        
+        return embeddings
+    
+    def create_texts_for_embedding_batch(self, videos: List[Dict]) -> List[str]:
+        """
+        Create embedding texts for multiple videos efficiently
+        
+        Args:
+            videos: List of video metadata dictionaries
+            
+        Returns:
+            List of embedding texts
+        """
+        logger.info(f"🔤 Preparing embedding texts for {len(videos)} videos")
+        
+        embedding_texts = []
+        
+        for video in videos:
+            try:
+                embedding_text = self.create_text_for_embedding(video)
+                embedding_texts.append(embedding_text)
+            except Exception as e:
+                logger.error(f"Error creating embedding text for video {video.get('id', 'unknown')}: {e}")
+                embedding_texts.append("")  # Empty text for failed cases
+        
+        valid_texts = sum(1 for text in embedding_texts if text.strip())
+        logger.info(f"✅ Created {valid_texts}/{len(videos)} valid embedding texts")
+        
+        return embedding_texts

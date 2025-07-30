@@ -49,6 +49,15 @@ PERIODIC_SAVE_INTERVAL = 3  # Save backup every N channels
 MEMORY_CHECK_INTERVAL = 5  # Check memory every N videos
 CHUNK_COUNT = 3  # Number of chunks for fallback saving
 
+# Async processing settings
+MAX_CONCURRENT_VIDEOS = 8  # Maximum concurrent video fetches (optimized for 8-core system)
+ASYNC_TIMEOUT_SECONDS = 30  # Timeout for individual video fetches
+SEMAPHORE_LIMIT = 10  # Limit concurrent operations to prevent overwhelming yt-dlp
+
+# Batch processing settings
+EMBEDDING_BATCH_SIZE = 16  # Process embeddings in batches for better performance
+TEXT_BATCH_SIZE = 8  # Process text extraction in batches
+
 # Content filtering patterns
 SKIP_PATTERNS = [
     'special thanks', 'thanks to', 'thank you to', 'credits:',

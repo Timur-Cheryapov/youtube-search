@@ -7,7 +7,9 @@ using the yt-dlp library.
 
 import yt_dlp
 import logging
+import asyncio
 from typing import Dict, List
+from concurrent.futures import ThreadPoolExecutor
 try:
     from . import config
 except ImportError:
@@ -96,3 +98,94 @@ def fetch_video_metadata(video_url: str) -> Dict:
 def extract_video_id(video_url: str) -> str:
     """Extract video ID from YouTube URL"""
     return video_url.split('v=')[-1] if 'v=' in video_url else 'unknown'
+
+
+# Global thread pool for async operations
+_executor = None
+
+def get_executor():
+    """Get or create a thread pool executor for async operations"""
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=config.MAX_CONCURRENT_VIDEOS)
+    return _executor
+
+
+async def fetch_video_metadata_async(video_url: str, semaphore: asyncio.Semaphore = None) -> Dict:
+    """
+    Asynchronously fetch detailed metadata for a single video
+    
+    Args:
+        video_url: YouTube video URL
+        semaphore: Optional semaphore to limit concurrent operations
+        
+    Returns:
+        Dictionary containing video metadata
+    """
+    async def _fetch_with_semaphore():
+        def _fetch_sync():
+            return fetch_video_metadata(video_url)
+        
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(get_executor(), _fetch_sync)
+    
+    if semaphore:
+        async with semaphore:
+            return await asyncio.wait_for(_fetch_with_semaphore(), timeout=config.ASYNC_TIMEOUT_SECONDS)
+    else:
+        return await asyncio.wait_for(_fetch_with_semaphore(), timeout=config.ASYNC_TIMEOUT_SECONDS)
+
+
+async def fetch_multiple_videos_async(video_urls: List[str], max_concurrent: int = None) -> List[Dict]:
+    """
+    Fetch metadata for multiple videos concurrently
+    
+    Args:
+        video_urls: List of YouTube video URLs
+        max_concurrent: Maximum number of concurrent fetches (defaults to config value)
+        
+    Returns:
+        List of video metadata dictionaries (may contain None for failed fetches)
+    """
+    if max_concurrent is None:
+        max_concurrent = config.MAX_CONCURRENT_VIDEOS
+    
+    # Create semaphore to limit concurrent operations
+    semaphore = asyncio.Semaphore(max_concurrent)
+    
+    async def fetch_with_error_handling(url: str) -> Dict:
+        try:
+            metadata = await fetch_video_metadata_async(url, semaphore)
+            logger.debug(f"✅ Successfully fetched metadata for {extract_video_id(url)}")
+            return metadata
+        except asyncio.TimeoutError:
+            logger.warning(f"⏰ Timeout fetching metadata for {extract_video_id(url)}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error fetching metadata for {extract_video_id(url)}: {e}")
+            return None
+    
+    # Create tasks for all videos
+    tasks = [fetch_with_error_handling(url) for url in video_urls]
+    
+    # Execute with progress tracking
+    logger.info(f"🚀 Starting async fetch of {len(video_urls)} videos with {max_concurrent} concurrent workers")
+    
+    # Use asyncio.gather to run all tasks concurrently
+    results = await asyncio.gather(*tasks, return_exceptions=False)
+    
+    # Filter out None results (failed fetches)
+    successful_results = [result for result in results if result is not None]
+    failed_count = len(results) - len(successful_results)
+    
+    logger.info(f"✅ Async fetch complete: {len(successful_results)} successful, {failed_count} failed")
+    
+    return successful_results
+
+
+def cleanup_executor():
+    """Cleanup the thread pool executor"""
+    global _executor
+    if _executor:
+        _executor.shutdown(wait=True)
+        _executor = None
