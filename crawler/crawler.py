@@ -38,10 +38,160 @@ import os
 from tqdm.auto import tqdm
 import torch
 from datetime import datetime
+import psutil
+import gc
+import sys
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+class MemoryMonitor:
+    """Memory monitoring and fail-safe mechanisms"""
+    
+    def __init__(self, memory_limit_percent: float = 85.0, critical_limit_percent: float = 95.0):
+        """
+        Initialize memory monitor
+        
+        Args:
+            memory_limit_percent: Warning threshold (% of total RAM)
+            critical_limit_percent: Critical threshold - stop processing (% of total RAM)
+        """
+        self.memory_limit_percent = memory_limit_percent
+        self.critical_limit_percent = critical_limit_percent
+        self.total_memory = psutil.virtual_memory().total
+        self.memory_limit_bytes = self.total_memory * (memory_limit_percent / 100)
+        self.critical_limit_bytes = self.total_memory * (critical_limit_percent / 100)
+        
+        logger.info(f"🛡️  Memory Monitor initialized:")
+        logger.info(f"   • Total RAM: {self.total_memory / (1024**3):.1f} GB")
+        logger.info(f"   • Warning threshold: {memory_limit_percent}% ({self.memory_limit_bytes / (1024**3):.1f} GB)")
+        logger.info(f"   • Critical threshold: {critical_limit_percent}% ({self.critical_limit_bytes / (1024**3):.1f} GB)")
+    
+    def get_memory_usage(self) -> Dict:
+        """Get current memory usage statistics"""
+        memory = psutil.virtual_memory()
+        process = psutil.Process()
+        
+        return {
+            'total': memory.total,
+            'available': memory.available,
+            'used': memory.used,
+            'percent': memory.percent,
+            'process_memory': process.memory_info().rss,
+            'process_percent': process.memory_percent()
+        }
+    
+    def check_memory_status(self) -> str:
+        """
+        Check current memory status
+        
+        Returns:
+            'safe', 'warning', or 'critical'
+        """
+        memory = psutil.virtual_memory()
+        
+        if memory.used >= self.critical_limit_bytes:
+            return 'critical'
+        elif memory.used >= self.memory_limit_bytes:
+            return 'warning'
+        else:
+            return 'safe'
+    
+    def log_memory_status(self, operation: str = ""):
+        """Log current memory usage"""
+        stats = self.get_memory_usage()
+        status = self.check_memory_status()
+        
+        status_emoji = {
+            'safe': '✅',
+            'warning': '⚠️',
+            'critical': '🚨'
+        }
+        
+        logger.info(f"{status_emoji[status]} Memory Status {f'({operation})' if operation else ''}: "
+                   f"{stats['percent']:.1f}% used "
+                   f"({stats['used'] / (1024**3):.1f}/{stats['total'] / (1024**3):.1f} GB), "
+                   f"Process: {stats['process_percent']:.1f}% "
+                   f"({stats['process_memory'] / (1024**3):.2f} GB)")
+    
+    def force_cleanup(self):
+        """Force garbage collection and cleanup"""
+        logger.info("🧹 Forcing memory cleanup...")
+        
+        # Clear GPU cache if using CUDA
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            logger.info("   • Cleared GPU cache")
+        
+        # Force garbage collection
+        collected = gc.collect()
+        logger.info(f"   • Garbage collected {collected} objects")
+        
+        # Log memory status after cleanup
+        self.log_memory_status("after cleanup")
+    
+    def check_and_handle_memory(self, operation: str = "") -> bool:
+        """
+        Check memory and handle according to status
+        
+        Returns:
+            True if safe to continue, False if should stop
+        """
+        status = self.check_memory_status()
+        
+        if status == 'critical':
+            logger.error(f"🚨 CRITICAL MEMORY USAGE - Stopping operation!")
+            self.log_memory_status(operation)
+            self.force_cleanup()
+            
+            # Check again after cleanup
+            if self.check_memory_status() == 'critical':
+                logger.error("🚨 Memory still critical after cleanup. Aborting to prevent system crash!")
+                return False
+            else:
+                logger.warning("✅ Memory recovered after cleanup. Continuing...")
+                return True
+                
+        elif status == 'warning':
+            logger.warning(f"⚠️  High memory usage detected!")
+            self.log_memory_status(operation)
+            self.force_cleanup()
+            return True
+            
+        else:
+            # Only log memory status occasionally when safe
+            if operation in ['channel_start', 'batch_complete']:
+                self.log_memory_status(operation)
+            return True
+    
+    def safe_batch_size(self, desired_size: int, base_memory_per_item: float = 50.0) -> int:
+        """
+        Calculate safe batch size based on available memory
+        
+        Args:
+            desired_size: Desired batch size
+            base_memory_per_item: Estimated memory per item in MB
+        
+        Returns:
+            Safe batch size
+        """
+        memory = psutil.virtual_memory()
+        available_mb = memory.available / (1024**2)
+        
+        # Reserve 20% of available memory as buffer
+        usable_memory_mb = available_mb * 0.8
+        
+        safe_size = max(1, int(usable_memory_mb / base_memory_per_item))
+        recommended_size = min(desired_size, safe_size)
+        
+        if recommended_size < desired_size:
+            logger.warning(f"⚠️  Reducing batch size from {desired_size} to {recommended_size} due to memory constraints")
+        
+        return recommended_size
+
+# Global memory monitor instance
+memory_monitor = MemoryMonitor()
 
 def search_channels_by_query(query: str, max_channels: int = 5) -> List[Dict]:
     """Search for channels using a query and return channel information"""
@@ -186,10 +336,23 @@ class VideoEmbedder:
                  embedding_model_name: str = 'sentence-transformers/all-MiniLM-L6-v2',
                  content_extractor_model_name: str = 'HuggingFaceTB/SmolLM2-1.7B-Instruct'):
         """Initialize the embedder with embedding and content extraction models"""
+        
+        # Check memory before loading models
+        if not memory_monitor.check_and_handle_memory("model_loading"):
+            raise MemoryError("Insufficient memory to load models safely")
+        
         logger.info(f"Loading sentence transformer model: {embedding_model_name}")
+        memory_monitor.log_memory_status("before embedding model")
+        
         self.embedding_model = SentenceTransformer(embedding_model_name)
         self.embedding_model_name = embedding_model_name
         logger.info("Embedding model loaded successfully!")
+        
+        memory_monitor.log_memory_status("after embedding model")
+        
+        # Check memory after embedding model
+        if not memory_monitor.check_and_handle_memory("after_embedding_model"):
+            raise MemoryError("Memory critical after loading embedding model")
         
         logger.info(f"Loading content extraction model: {content_extractor_model_name}")
         # Use official SmolLM2 implementation pattern
@@ -205,6 +368,11 @@ class VideoEmbedder:
         logger.info(f"Model loaded on device: {next(self.content_model.parameters()).device}")
         self.content_extractor_model_name = content_extractor_model_name
         logger.info("Content extraction model loaded successfully!")
+        
+        # Final memory check after all models loaded
+        memory_monitor.log_memory_status("models_loaded")
+        if not memory_monitor.check_and_handle_memory("models_loaded"):
+            logger.warning("⚠️  High memory usage after loading models - monitoring closely")
     
     def extract_main_content(self, description: str) -> str:
         """Extract main video content from description, ignoring credits and promotional content"""
@@ -400,7 +568,7 @@ Main content:"""
                 return []
             
             # Generate embedding
-            embedding = self.embedding_model.encode(text.strip())
+            embedding = self.embedding_model.encode(text.strip(), show_progress_bar=False)
             
             # Convert to list for JSON serialization
             return embedding.tolist()
@@ -414,6 +582,11 @@ def process_channel_videos(channel_info: Dict, embedder: VideoEmbedder, video_li
     channel_url = channel_info['channel_url']
     channel_name = channel_info['channel_name']
     
+    # Memory check before starting channel processing
+    if not memory_monitor.check_and_handle_memory("channel_start"):
+        logger.error(f"🚨 Insufficient memory to process channel: {channel_name}")
+        return []
+    
     logger.info(f"📡 Processing channel: {channel_name} ({channel_url})")
     
     # Get video URLs from channel
@@ -423,6 +596,12 @@ def process_channel_videos(channel_info: Dict, embedder: VideoEmbedder, video_li
     if not video_urls:
         logger.warning(f"No videos found for channel: {channel_name}")
         return []
+    
+    # Adjust batch size based on available memory
+    safe_video_limit = memory_monitor.safe_batch_size(len(video_urls), base_memory_per_item=30.0)
+    if safe_video_limit < len(video_urls):
+        logger.warning(f"⚠️  Reducing video processing from {len(video_urls)} to {safe_video_limit} videos due to memory constraints")
+        video_urls = video_urls[:safe_video_limit]
     
     logger.info(f"Found {len(video_urls)} videos from {channel_name}")
     
@@ -436,6 +615,12 @@ def process_channel_videos(channel_info: Dict, embedder: VideoEmbedder, video_li
     for idx, video_url in enumerate(video_progress, 1):
         video_id = video_url.split('v=')[-1] if 'v=' in video_url else 'unknown'
         video_progress.set_description(f"Processing {channel_name}: {idx}/{len(video_urls)}")
+        
+        # Memory check every 5 videos
+        if idx % 5 == 0:
+            if not memory_monitor.check_and_handle_memory(f"video_{idx}"):
+                logger.error(f"🚨 Memory critical during video processing. Stopping at video {idx}/{len(video_urls)}")
+                break
         
         try:
             # Fetch video metadata
@@ -472,8 +657,17 @@ def process_channel_videos(channel_info: Dict, embedder: VideoEmbedder, video_li
         except Exception as e:
             failed_videos += 1
             logger.error(f"Failed to process {video_url}: {e}")
+            
+            # If we get memory-related errors, check memory status
+            if "memory" in str(e).lower() or "cuda out of memory" in str(e).lower():
+                if not memory_monitor.check_and_handle_memory("memory_error"):
+                    logger.error("🚨 Memory-related error detected. Stopping processing.")
+                    break
     
     video_progress.close()
+    
+    # Final memory cleanup after processing channel
+    memory_monitor.force_cleanup()
     
     logger.info(f"✅ Channel {channel_name}: {processed_videos} successful, {failed_videos} failed")
     return results
@@ -481,26 +675,42 @@ def process_channel_videos(channel_info: Dict, embedder: VideoEmbedder, video_li
 def automated_crawler():
     """Automated crawler that searches for channels and processes them"""
     
-    # 5 broad search queries for diverse content
+    # 10 broad search queries for diverse content
     SEARCH_QUERIES = [
-        "science education tutorials",
-        "technology programming tutorials", 
-        "history documentary",
-        "cooking recipes techniques",
-        "fitness workout training"
+        "art and painting tutorials",
+        "personal finance and investing",
+        "travel vlogs and adventure",
+        "mental health and mindfulness",
+        "music production and instrument lessons",
+        "language learning and linguistics",
+        "environmental science and sustainability",
+        "parenting and child development",
+        "automotive repair and car reviews",
+        "fashion trends and beauty tips"
     ]
     
-    MAX_CHANNELS_PER_QUERY = 3
-    VIDEO_LIMIT_PER_CHANNEL = 10
+    MAX_CHANNELS_PER_QUERY = 10
+    VIDEO_LIMIT_PER_CHANNEL = 20
     
     logger.info("🤖 Starting automated YouTube crawler...")
+    
+    # Initial memory check
+    memory_monitor.log_memory_status("startup")
+    if not memory_monitor.check_and_handle_memory("startup"):
+        logger.error("🚨 Insufficient memory to start crawler safely")
+        return
     
     # Load processed channels
     processed_channels = load_processed_channels()
     
     # Initialize the embedder (this loads the models)
     logger.info("🚀 Initializing video embedder...")
-    embedder = VideoEmbedder()
+    try:
+        embedder = VideoEmbedder()
+    except MemoryError as e:
+        logger.error(f"🚨 Failed to initialize embedder due to memory constraints: {e}")
+        logger.error("💡 Try closing other applications or reducing video limits")
+        return
     
     all_results = {}
     total_channels_processed = 0
@@ -527,6 +737,21 @@ def automated_crawler():
                 logger.info(f"⏭️  Skipping already processed channel: {channel_name}")
                 continue
             
+            # Memory check before processing each channel
+            if not memory_monitor.check_and_handle_memory(f"before_channel_{channel_name}"):
+                logger.error(f"🚨 Insufficient memory to process channel: {channel_name}")
+                logger.info("💾 Saving current progress before stopping...")
+                
+                # Save progress before stopping due to memory
+                if all_results:
+                    output_file = "./crawler/youtube_videos_with_embeddings_partial.json"
+                    save_to_json(all_results, output_file)
+                    logger.info(f"💾 Partial results saved to: {output_file}")
+                
+                save_processed_channels(processed_channels)
+                logger.error("🚨 Stopping due to memory constraints")
+                return
+            
             # Process channel videos
             try:
                 video_results = process_channel_videos(channel_info, embedder, VIDEO_LIMIT_PER_CHANNEL)
@@ -542,26 +767,78 @@ def automated_crawler():
                     total_videos_processed += len(video_results)
                     
                     logger.info(f"✅ Completed processing channel: {channel_name} ({len(video_results)} videos)")
+                    
+                    # Periodic save to prevent data loss
+                    if total_channels_processed % 3 == 0:  # Save every 3 channels
+                        logger.info("💾 Saving periodic backup...")
+                        backup_file = f"./crawler/youtube_videos_backup_{total_channels_processed}.json"
+                        save_to_json(all_results, backup_file)
+                        save_processed_channels(processed_channels)
+                        memory_monitor.log_memory_status("periodic_save")
                 else:
                     logger.warning(f"❌ No videos extracted from channel: {channel_name}")
                 
             except Exception as e:
                 logger.error(f"❌ Failed to process channel {channel_name}: {e}")
+                
+                # Check if it's a memory-related error
+                if "memory" in str(e).lower() or "cuda out of memory" in str(e).lower():
+                    logger.error("🚨 Memory-related error detected")
+                    if not memory_monitor.check_and_handle_memory("channel_error"):
+                        logger.error("🚨 Cannot recover from memory error. Stopping.")
+                        break
                 continue
+    
+    # Final memory check before saving
+    logger.info("💾 Preparing to save final results...")
+    memory_monitor.log_memory_status("before_final_save")
+    
+    # Memory check before saving large files
+    if not memory_monitor.check_and_handle_memory("final_save"):
+        logger.warning("⚠️  High memory usage detected before saving. Attempting cleanup...")
+        memory_monitor.force_cleanup()
     
     # Save all results
     output_file = "./crawler/youtube_videos_with_embeddings.json"
-    save_to_json(all_results, output_file)
+    try:
+        save_to_json(all_results, output_file)
+        logger.info(f"💾 Main results saved to: {output_file}")
+    except Exception as e:
+        logger.error(f"❌ Failed to save main results: {e}")
+        # Try to save smaller chunks if main save fails
+        logger.info("🔧 Attempting to save results in smaller chunks...")
+        try:
+            chunk_size = max(1, len(all_results) // 3)  # Split into 3 chunks
+            chunks = list(all_results.items())
+            for i in range(0, len(chunks), chunk_size):
+                chunk = dict(chunks[i:i + chunk_size])
+                chunk_file = f"./crawler/youtube_videos_chunk_{i//chunk_size + 1}.json"
+                save_to_json(chunk, chunk_file)
+                logger.info(f"💾 Saved chunk to: {chunk_file}")
+        except Exception as chunk_error:
+            logger.error(f"❌ Failed to save chunks: {chunk_error}")
     
     # Save processed channels
-    save_processed_channels(processed_channels)
+    try:
+        save_processed_channels(processed_channels)
+        logger.info(f"📝 Channel tracking saved to: ./crawler/processed_channels.json")
+    except Exception as e:
+        logger.error(f"❌ Failed to save processed channels: {e}")
+    
+    # Final memory status and cleanup
+    memory_monitor.force_cleanup()
+    memory_monitor.log_memory_status("final")
     
     # Final summary
     logger.info(f"\n🎉 Automated crawling complete!")
     logger.info(f"📊 Processed {total_channels_processed} channels")
     logger.info(f"📹 Total videos with embeddings: {total_videos_processed}")
     logger.info(f"💾 Results saved to: {output_file}")
-    logger.info(f"📝 Channel tracking saved to: ./crawler/processed_channels.json")
+    
+    # Memory usage summary
+    final_stats = memory_monitor.get_memory_usage()
+    logger.info(f"🧠 Final memory usage: {final_stats['percent']:.1f}% ({final_stats['used'] / (1024**3):.1f} GB)")
+    logger.info(f"💡 Peak process memory: {final_stats['process_memory'] / (1024**3):.2f} GB")
 
 if __name__ == "__main__":
     import sys
@@ -571,9 +848,16 @@ if __name__ == "__main__":
         url = input("Enter YouTube channel URL: ").strip()
         limit = 10
         
-        # Initialize the embedder
+        # Initialize the embedder with memory checks
         logger.info("🚀 Initializing video embedder...")
-        embedder = VideoEmbedder()
+        memory_monitor.log_memory_status("manual_startup")
+        
+        try:
+            embedder = VideoEmbedder()
+        except MemoryError as e:
+            logger.error(f"🚨 Failed to initialize embedder: {e}")
+            logger.error("💡 Try closing other applications or reducing video limits")
+            sys.exit(1)
         
         # Create channel info dict for manual processing
         channel_info = {

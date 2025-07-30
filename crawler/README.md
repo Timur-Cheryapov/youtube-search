@@ -19,7 +19,7 @@ An enhanced YouTube crawler that automatically discovers channels through search
 ### Automated Discovery (Recommended)
 ```bash
 cd crawler
-pip install yt-dlp sentence-transformers torch transformers tqdm
+pip install yt-dlp sentence-transformers torch transformers tqdm psutil
 python crawler.py
 ```
 
@@ -128,6 +128,50 @@ embedding_model_name = 'sentence-transformers/all-mpnet-base-v2'  # Higher quali
 content_extractor_model_name = 'microsoft/DialoGPT-medium'  # Different LLM
 ```
 
+## 🛡️ Memory Management & Fail-Safes
+
+The crawler includes comprehensive memory monitoring and protection:
+
+### **Automatic Memory Monitoring**
+- **Real-time tracking**: Monitors RAM usage throughout processing
+- **Smart thresholds**: Warning at 85% RAM, critical at 95% RAM
+- **Process tracking**: Monitors both system and process memory usage
+
+### **Fail-Safe Mechanisms**
+- **Model loading protection**: Checks memory before loading ML models
+- **Batch size adaptation**: Automatically reduces processing load if memory is low
+- **Progressive saves**: Saves backups every 3 channels to prevent data loss
+- **Graceful degradation**: Reduces video processing if memory gets critical
+- **Emergency stops**: Halts processing before system crashes
+
+### **Memory Management Features**
+- **GPU cache clearing**: Automatically clears CUDA memory when needed
+- **Garbage collection**: Forces Python garbage collection during high usage
+- **Chunk saving**: Saves large files in smaller pieces if memory is insufficient
+- **Memory recovery**: Attempts cleanup and recovery before stopping
+
+### **Memory Status Indicators**
+- ✅ **Safe**: Normal operation (< 85% RAM)
+- ⚠️ **Warning**: High usage (85-95% RAM) - cleanup initiated
+- 🚨 **Critical**: Dangerous levels (> 95% RAM) - processing stopped
+
+## Dependencies
+
+Core requirements:
+```bash
+pip install yt-dlp sentence-transformers torch transformers tqdm psutil
+```
+
+Or install from requirements if created:
+```bash
+pip install -r requirements.txt
+```
+
+**System Requirements:**
+- Python 3.8+
+- **4GB RAM minimum, 8GB+ recommended**
+- Optional: CUDA-compatible GPU for faster embedding generation
+
 ## Integration
 
 The generated embeddings can be used with:
@@ -139,11 +183,19 @@ The generated embeddings can be used with:
 ## Troubleshooting
 
 ### Common Issues
-1. **CUDA Out of Memory**: Reduce `VIDEO_LIMIT_PER_CHANNEL` or use CPU-only mode
-2. **Rate Limiting**: YouTube may temporarily block requests; wait and retry
-3. **Model Loading**: Ensure sufficient disk space for downloading models (~2GB)
+1. **Memory Exhaustion**: The crawler will automatically handle this with fail-safes
+2. **CUDA Out of Memory**: GPU cache is automatically cleared; reduce `VIDEO_LIMIT_PER_CHANNEL` if persistent
+3. **Rate Limiting**: YouTube may temporarily block requests; wait and retry
+4. **Model Loading**: Ensure sufficient disk space (~2GB) and RAM (~4GB minimum)
+
+### Memory-Related Solutions
+- **High memory usage**: Crawler automatically reduces batch sizes and processes fewer videos
+- **System slowdown**: Memory monitor will force cleanup and garbage collection
+- **Crash prevention**: Processing stops before reaching critical memory levels
+- **Data preservation**: Partial results are saved before stopping due to memory constraints
 
 ### Performance Tips
-- Run on GPU for 3-5x faster embedding generation
-- Use SSD storage for faster model loading
-- Increase batch sizes if you have more VRAM available
+- **Close other applications** before running for maximum available RAM
+- **Use GPU** for 3-5x faster embedding generation (but monitor GPU memory)
+- **SSD storage** significantly improves model loading and data writing speeds
+- **Monitor logs** for memory status updates and optimization suggestions
