@@ -33,20 +33,46 @@ class SupabaseClient:
         self._load_environment()
         
         self.supabase_url = os.getenv('NEXT_PUBLIC_SUPABASE_URL')
-        self.supabase_key = os.getenv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+        self.supabase_anon_key = os.getenv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+        self.supabase_service_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
         
-        if not self.supabase_url or not self.supabase_key:
+        if not self.supabase_url:
+            raise ValueError("Missing NEXT_PUBLIC_SUPABASE_URL environment variable")
+        
+        # Initialize read client (anon key for public read access)
+        if config.SUPABASE_USE_ANON_KEY_FOR_READS and self.supabase_anon_key:
+            try:
+                self.read_client: Client = create_client(self.supabase_url, self.supabase_anon_key)
+                logger.info("🔌 Connected to Supabase for read operations (anon key)")
+            except Exception as e:
+                logger.error(f"❌ Failed to connect to Supabase with anon key: {e}")
+                self.read_client = None
+        else:
+            self.read_client = None
+        
+        # Initialize write client (service role key for write operations)
+        if config.SUPABASE_REQUIRE_SERVICE_KEY_FOR_WRITES and self.supabase_service_key:
+            try:
+                self.write_client: Client = create_client(self.supabase_url, self.supabase_service_key)
+                logger.info("🔌 Connected to Supabase for write operations (service role key)")
+            except Exception as e:
+                logger.error(f"❌ Failed to connect to Supabase with service role key: {e}")
+                self.write_client = None
+        elif self.supabase_anon_key:
+            # Fallback to anon key if service key not available
+            logger.warning("⚠️  Service role key not found, using anon key for writes (may fail with RLS)")
+            self.write_client = self.read_client
+        else:
+            self.write_client = None
+        
+        # Legacy client property for backward compatibility
+        self.client = self.write_client or self.read_client
+        
+        if not self.client:
             raise ValueError(
                 "Missing Supabase environment variables. "
-                "Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY"
+                "Please set NEXT_PUBLIC_SUPABASE_URL and either NEXT_PUBLIC_SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY"
             )
-        
-        try:
-            self.client: Client = create_client(self.supabase_url, self.supabase_key)
-            logger.info("🔌 Connected to Supabase successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to connect to Supabase: {e}")
-            raise
     
     def _load_environment(self):
         """Load environment variables from .env.local in parent directory"""
@@ -78,7 +104,9 @@ class SupabaseClient:
     def test_connection(self) -> bool:
         """Test the Supabase connection"""
         try:
-            response = self.client.from_(config.SUPABASE_DOCUMENTS_TABLE).select("id").limit(1).execute()
+            # Use read client for connection test
+            client_to_test = self.read_client or self.write_client
+            response = client_to_test.from_(config.SUPABASE_DOCUMENTS_TABLE).select("id").limit(1).execute()
             logger.info("✅ Supabase connection test successful")
             return True
         except Exception as e:
@@ -189,7 +217,7 @@ class SupabaseClient:
             logger.info(f"📤 Uploading batch {batch_num}/{total_batches} ({len(batch)} documents)")
             
             try:
-                response = self.client.from_(config.SUPABASE_DOCUMENTS_TABLE).insert(batch).execute()
+                response = self.write_client.from_(config.SUPABASE_DOCUMENTS_TABLE).insert(batch).execute()
                 successful_uploads += len(batch)
                 logger.info(f"✅ Successfully uploaded batch {batch_num}")
                 
@@ -219,7 +247,7 @@ class SupabaseClient:
             }
             
             # Upsert channel statistics
-            response = self.client.from_(config.SUPABASE_CHANNEL_STATS_TABLE).upsert(
+            response = self.write_client.from_(config.SUPABASE_CHANNEL_STATS_TABLE).upsert(
                 channel_stat,
                 on_conflict='channel_url'
             ).execute()
@@ -237,7 +265,9 @@ class SupabaseClient:
         # to avoid unnecessary database calls during processing
         logger.warning(f"⚠️  Using deprecated check_channel_processed method for {channel_url}")
         try:
-            response = self.client.from_(config.SUPABASE_CHANNEL_STATS_TABLE).select("channel_url").eq("channel_url", channel_url).execute()
+            # Use read client for checking channel status
+            client_to_use = self.read_client or self.write_client
+            response = client_to_use.from_(config.SUPABASE_CHANNEL_STATS_TABLE).select("channel_url").eq("channel_url", channel_url).execute()
             
             return len(response.data) > 0
             
@@ -248,7 +278,9 @@ class SupabaseClient:
     def get_processed_channels(self) -> List[str]:
         """Get list of already processed channel URLs"""
         try:
-            response = self.client.from_(config.SUPABASE_CHANNEL_STATS_TABLE).select("channel_url").execute()
+            # Use read client for getting processed channels
+            client_to_use = self.read_client or self.write_client
+            response = client_to_use.from_(config.SUPABASE_CHANNEL_STATS_TABLE).select("channel_url").execute()
             
             return [row['channel_url'] for row in response.data]
             
@@ -265,11 +297,11 @@ class SupabaseClient:
         try:
             # Clear documents with proper JSON query syntax
             logger.info("🗑️  Clearing existing YouTube videos from database...")
-            self.client.from_(config.SUPABASE_DOCUMENTS_TABLE).delete().eq('metadata->>document_type', 'youtube_video').execute()
+            self.write_client.from_(config.SUPABASE_DOCUMENTS_TABLE).delete().eq('metadata->>document_type', 'youtube_video').execute()
             
             # Clear channel stats
             logger.info("🗑️  Clearing existing channel statistics from database...")
-            self.client.from_(config.SUPABASE_CHANNEL_STATS_TABLE).delete().neq('id', 0).execute()
+            self.write_client.from_(config.SUPABASE_CHANNEL_STATS_TABLE).delete().neq('id', 0).execute()
             
             logger.info("✅ Existing YouTube data cleared")
             return True
@@ -281,11 +313,14 @@ class SupabaseClient:
     def get_database_stats(self) -> Dict:
         """Get current database statistics"""
         try:
+            # Use read client for getting database stats
+            client_to_use = self.read_client or self.write_client
+            
             # Count documents with proper JSON query syntax
-            docs_response = self.client.from_(config.SUPABASE_DOCUMENTS_TABLE).select("id", count="exact").eq('metadata->>document_type', 'youtube_video').execute()
+            docs_response = client_to_use.from_(config.SUPABASE_DOCUMENTS_TABLE).select("id", count="exact").eq('metadata->>document_type', 'youtube_video').execute()
             
             # Count channels
-            channels_response = self.client.from_(config.SUPABASE_CHANNEL_STATS_TABLE).select("id", count="exact").execute()
+            channels_response = client_to_use.from_(config.SUPABASE_CHANNEL_STATS_TABLE).select("id", count="exact").execute()
             
             return {
                 'total_videos': docs_response.count or 0,

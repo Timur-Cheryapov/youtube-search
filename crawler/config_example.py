@@ -31,6 +31,12 @@ SUPABASE_BATCH_SIZE = 100  # Number of documents to upload in each batch
 SUPABASE_DOCUMENTS_TABLE = "documents"  # Table for video documents
 SUPABASE_CHANNEL_STATS_TABLE = "channel_upload_stats"  # Table for channel statistics
 
+# Supabase authentication settings
+# For read operations (public access with RLS policies)
+SUPABASE_USE_ANON_KEY_FOR_READS = True  # Use anon key for read operations
+# For write operations (requires service role key)
+SUPABASE_REQUIRE_SERVICE_KEY_FOR_WRITES = True  # Use service key for write operations
+
 # Search queries for automated mode
 SEARCH_QUERIES = [
     "me at the zoo",
