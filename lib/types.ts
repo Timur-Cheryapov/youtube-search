@@ -1,7 +1,7 @@
 export interface Document {
   id: string;
   content: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   embedding?: number[] | string; // Can be string when retrieved from database
   created_at?: string;
 }

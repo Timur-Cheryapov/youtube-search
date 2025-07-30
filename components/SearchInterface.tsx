@@ -165,7 +165,7 @@ export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStar
                 <Card>
                   <CardContent className="text-center py-6">
                     <p className="text-muted-foreground text-sm">
-                      You've reached the end of the results.
+                      You&apos;ve reached the end of the results.
                     </p>
                   </CardContent>
                 </Card>

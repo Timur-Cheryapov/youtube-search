@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState } from 'react';
 import { SearchResult } from '@/lib/types';
-import { Badge } from '@/components/ui/badge';
+import Image from 'next/image';
 
 interface VideoCardProps {
   result: SearchResult;
@@ -81,16 +81,17 @@ export function VideoCard({ result, index }: VideoCardProps) {
     // Check initial visibility after a short delay to ensure DOM is ready
     const initialCheckTimeout = setTimeout(checkInitialVisibility, 100);
 
-    if (cardRef.current) {
-      observer.observe(cardRef.current);
+    const currentRef = cardRef.current;
+    if (currentRef) {
+      observer.observe(currentRef);
     }
 
     window.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
       clearTimeout(initialCheckTimeout);
-      if (cardRef.current) {
-        observer.unobserve(cardRef.current);
+      if (currentRef) {
+        observer.unobserve(currentRef);
       }
       window.removeEventListener('scroll', handleScroll);
       if (rafId) {
@@ -172,7 +173,6 @@ export function VideoCard({ result, index }: VideoCardProps) {
     
     const processedDate = new Date(createdAt || '');
     
-    const now = new Date();
     const ageInDays = Math.floor((processedDate.getTime() - videoDate.getTime()) / (1000 * 60 * 60 * 24));
     
     // Calculate views per day (with minimum age of 1 day to avoid division by zero)
@@ -194,13 +194,13 @@ export function VideoCard({ result, index }: VideoCardProps) {
   };
 
   const metadata = result.metadata || {};
-  const thumbnail = metadata.thumbnail_url || '/file.svg';
-  const title = metadata.title || 'Untitled Video';
-  const channel = metadata.channel || metadata.uploader || 'Unknown Channel';
-  const viewCount = metadata.view_count;
-  const uploadDate = metadata.upload_date;
-  const duration = metadata.duration;
-  const youtubeUrl = metadata.youtube_url;
+  const thumbnail = (metadata.thumbnail_url as string) || '/file.svg';
+  const title = (metadata.title as string) || 'Untitled Video';
+  const channel = (metadata.channel as string) || (metadata.uploader as string) || 'Unknown Channel';
+  const viewCount = metadata.view_count as number | undefined;
+  const uploadDate = metadata.upload_date as string | undefined;
+  const duration = metadata.duration as number | undefined;
+  const youtubeUrl = metadata.youtube_url as string | undefined;
   const createdAt = result.created_at;
   
   const popularity = calculatePopularity(viewCount, uploadDate, createdAt);
@@ -228,9 +228,11 @@ export function VideoCard({ result, index }: VideoCardProps) {
                 rel="noopener noreferrer"
                 className="block w-full h-full relative"
               >
-                <img 
+                <Image 
                   src={thumbnail} 
                   alt={title}
+                  width={448}
+                  height={252}
                   className="w-full h-full object-cover"
                   onError={(e) => {
                     e.currentTarget.src = '/file.svg';
@@ -285,9 +287,9 @@ export function VideoCard({ result, index }: VideoCardProps) {
             <div className={`text-sm px-2 py-1 rounded-md border text-center font-medium ${getSimilarityBadgeClasses(result.similarity)}`}>
               {result.similarity.toFixed(3)} similarity
             </div>
-            {metadata.like_count && (
+            {(metadata.like_count as number) && (
               <div className="text-sm px-2 py-1 rounded-md border text-center font-medium bg-gray-100 text-gray-700 border-gray-200">
-                {metadata.like_count || 0} likes
+                {(metadata.like_count as number) || 0} likes
               </div>
             )}
             <div className={`text-sm px-2 py-1 rounded-md border text-center font-medium ${popularity.classes}`}>
