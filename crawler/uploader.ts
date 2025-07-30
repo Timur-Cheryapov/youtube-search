@@ -39,6 +39,13 @@ interface SupabaseDocument {
   embedding: number[];
 }
 
+// Channel statistics structure
+interface ChannelStats {
+  channel_url: string;
+  channel_name: string;
+  videos_count: number;
+}
+
 class YouTubeToSupabaseUploader {
   private supabase;
 
@@ -81,7 +88,7 @@ class YouTubeToSupabaseUploader {
       upload_date: video.upload_date,
       
       // Thumbnails
-      thumbnail_url: video.thumbnails?.[0]?.url || null,
+      thumbnail_url: video.thumbnails?.filter((thumbnail: any) => thumbnail.url.includes('hqdefault.webp'))[0]?.url || null,
       
       // AI processing info
       embedding_model: video.embedding.embedding_model,
@@ -98,6 +105,66 @@ class YouTubeToSupabaseUploader {
       metadata,
       embedding: video.embedding.vector
     };
+  }
+
+  private aggregateChannelStats(videos: YouTubeVideo[], channelUrl: string): ChannelStats[] {
+    const statsMap = new Map<string, ChannelStats>();
+
+    for (const video of videos) {
+      try {
+        const key = `${channelUrl}`;
+        
+        if (statsMap.has(key)) {
+          const existing = statsMap.get(key)!;
+          existing.videos_count += 1;
+        } else {
+          statsMap.set(key, {
+            channel_url: channelUrl,
+            channel_name: video.channel || video.uploader || 'Unknown',
+            videos_count: 1
+          });
+        }
+      } catch (error) {
+        console.warn(`⚠️  Skipping video ${video.id} - invalid upload date: ${video.upload_date}`);
+        continue;
+      }
+    }
+
+    return Array.from(statsMap.values());
+  }
+
+  private async saveChannelStats(channelStats: ChannelStats[]): Promise<void> {
+    if (channelStats.length === 0) {
+      return;
+    }
+
+    console.log(`📊 Saving ${channelStats.length} channel statistics records...`);
+
+    try {
+      const { data, error } = await this.supabase
+        .from('channel_upload_stats')
+        .upsert(
+          channelStats.map(stat => ({
+            channel_url: stat.channel_url,
+            channel_name: stat.channel_name,
+            videos_count: stat.videos_count
+          })),
+          {
+            onConflict: 'channel_url',
+            ignoreDuplicates: false
+          }
+        );
+
+      if (error) {
+        console.error('❌ Error saving channel statistics:', error);
+        throw error;
+      } else {
+        console.log('✅ Channel statistics saved successfully');
+      }
+    } catch (err) {
+      console.error('❌ Exception saving channel statistics:', err);
+      throw err;
+    }
   }
 
   async uploadVideos(filePath: string, batchSize: number = 100): Promise<void> {
@@ -125,6 +192,10 @@ class YouTubeToSupabaseUploader {
         console.log(`\n🎬 Processing channel: ${channelUrl}`);
         console.log(`📹 Videos in channel: ${videos.length}`);
 
+        // Generate channel statistics for this channel
+        const channelStats = this.aggregateChannelStats(videos, channelUrl);
+        console.log(`📊 Generated ${channelStats.length} channel statistics records`);
+
         // Prepare documents for this channel
         const documents: SupabaseDocument[] = [];
 
@@ -140,6 +211,12 @@ class YouTubeToSupabaseUploader {
 
         if (documents.length === 0) {
           console.log(`⚠️  No valid documents to upload for this channel`);
+          // Still save channel stats even if no documents
+          try {
+            await this.saveChannelStats(channelStats);
+          } catch (error) {
+            console.error(`❌ Failed to save channel statistics for ${channelUrl}:`, error);
+          }
           continue;
         }
 
@@ -171,6 +248,14 @@ class YouTubeToSupabaseUploader {
 
           // Small delay between batches to avoid rate limiting
           await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        // Save channel statistics after successful upload
+        try {
+          await this.saveChannelStats(channelStats);
+        } catch (error) {
+          console.error(`❌ Failed to save channel statistics for ${channelUrl}:`, error);
+          // Don't throw here, as the video upload was successful
         }
       }
 
@@ -221,6 +306,22 @@ class YouTubeToSupabaseUploader {
 
     console.log('✅ Existing YouTube videos cleared');
   }
+
+  async clearExistingChannelStats(): Promise<void> {
+    console.log('🗑️  Clearing existing channel statistics from database...');
+    
+    const { error } = await this.supabase
+      .from('channel_upload_stats')
+      .delete()
+      .neq('id', 0); // Delete all records
+
+    if (error) {
+      console.error('❌ Error clearing existing channel statistics:', error);
+      throw error;
+    }
+
+    console.log('✅ Existing channel statistics cleared');
+  }
 }
 
 async function main() {
@@ -251,16 +352,17 @@ async function main() {
     await uploader.testConnection();
 
     // Ask user if they want to clear existing data
-    console.log('\n⚠️  Do you want to clear existing YouTube videos from the database?');
-    console.log('This will remove all documents with document_type="youtube_video"');
+    console.log('\n⚠️  Do you want to clear existing YouTube videos and channel statistics from the database?');
+    console.log('This will remove all documents with document_type="youtube_video" and all channel statistics');
     
     // For automation, you can set an environment variable or modify this logic
     const shouldClear = process.env.CLEAR_EXISTING === 'true';
     
     if (shouldClear) {
       await uploader.clearExistingYouTubeVideos();
+      await uploader.clearExistingChannelStats();
     } else {
-      console.log('🔄 Keeping existing data, new videos will be added');
+      console.log('🔄 Keeping existing data, new videos and channel stats will be added/updated');
     }
 
     // Upload videos
@@ -273,7 +375,7 @@ async function main() {
 }
 
 // Export for potential use as module
-export { YouTubeToSupabaseUploader };
+export { YouTubeToSupabaseUploader, type ChannelStats, type YouTubeVideo };
 
 // Run if called directly
 if (require.main === module) {
