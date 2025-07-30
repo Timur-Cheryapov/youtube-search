@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { SearchInterface } from '@/components/SearchInterface';
 import { SearchResult } from '@/lib/types';
 import { searchDocuments } from '@/lib/search';
+import Image from 'next/image';
 
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
@@ -42,9 +43,12 @@ export default function Home() {
               : 'mb-12'
           }`}>
             <div className="space-y-4">
-              <h1 className={`font-bold transition-all duration-700 ease-in-out text-5xl`}>
-                YouTube Search
-              </h1>
+              <div className="flex justify-center items-center gap-4">
+                <Image src="/logo.png" alt="YouTube Search" width={100} height={100} />
+                <h1 className={`font-bold transition-all duration-700 ease-in-out text-5xl`}>
+                  YouTube Search
+                </h1>  
+              </div>
               <p className={`text-muted-foreground max-w-2xl mx-auto transition-all duration-700 ease-in-out text-xl`}>
                 AI-powered video discovery using natural language. Search through YouTube videos by content meaning, not just titles.
               </p>

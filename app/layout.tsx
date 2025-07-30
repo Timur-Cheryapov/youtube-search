@@ -13,9 +13,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vector Search - Semantic Search with AI",
-  description: "Perform semantic search using vector embeddings. Free, fast, and powerful search powered by AI.",
-  keywords: ["vector search", "semantic search", "AI", "embeddings", "search engine"],
+  title: "YouTube Search",
+  description: "Search YouTube videos using vector embeddings. Free, fast, and powerful search powered by AI.",
+  keywords: ["youtube search", "semantic search", "AI", "embeddings", "search engine"],
+  icons: {
+    icon: [
+      {
+        url: "/logo.png",
+        href: "/logo.png",
+      }
+    ],
+  },
 };
 
 export default function RootLayout({

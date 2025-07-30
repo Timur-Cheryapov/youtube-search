@@ -12,7 +12,7 @@ export interface SearchOptions {
 export async function searchDocuments({
   query,
   limit = 10,
-  matchThreshold = 0,
+  matchThreshold = 0.15,
   offset_count = 0
 }: SearchOptions): Promise<SearchResult[]> {
   try {
