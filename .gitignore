@@ -44,4 +44,4 @@ next-env.d.ts
 /crawler/*.json
 
 # crawler cache
-/crawler/__pycache__/
+/crawler/__pycache__
