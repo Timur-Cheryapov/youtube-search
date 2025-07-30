@@ -10,8 +10,8 @@ EMBEDDING_MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'
 CONTENT_EXTRACTOR_MODEL_NAME = 'HuggingFaceTB/SmolLM2-1.7B-Instruct'
 
 # Processing limits
-MAX_CHANNELS_PER_QUERY = 10
-VIDEO_LIMIT_PER_CHANNEL = 20
+MAX_CHANNELS_PER_QUERY = 8
+VIDEO_LIMIT_PER_CHANNEL = 8
 VIDEO_LIMIT_MANUAL_MODE = 10
 
 # Memory monitoring settings
@@ -33,16 +33,18 @@ SUPABASE_CHANNEL_STATS_TABLE = "channel_upload_stats"  # Table for channel stati
 
 # Search queries for automated mode
 SEARCH_QUERIES = [
-    "art and painting tutorials",
-    "personal finance and investing", 
-    "travel vlogs and adventure",
-    "mental health and mindfulness",
-    "music production and instrument lessons",
-    "language learning and linguistics",
-    "environmental science and sustainability",
-    "parenting and child development",
-    "automotive repair and car reviews",
-    "fashion trends and beauty tips"
+    "me at the zoo",
+    "popular TikTok dances and challenges",
+    "GRWM (Get Ready With Me) and daily vlogs",
+    "comedic skits and relatable teen content",
+    "mukbangs and snack reviews",
+    "rap music new releases and reactions",
+    "fashion hauls and styling tips (Gen Z)",
+    "true crime stories and mysteries explained",
+    "coding tutorials for beginners (Python, JavaScript)",
+    "storytime animation (funny/relatable)",
+    "movie trailers and fan theories",
+    "celebrity gossip and pop culture updates"
 ]
 
 # Content extraction settings
@@ -56,7 +58,7 @@ MEMORY_CHECK_INTERVAL = 5  # Check memory every N videos
 CHUNK_COUNT = 3  # Number of chunks for fallback saving
 
 # Async processing settings
-MAX_CONCURRENT_VIDEOS = 8  # Maximum concurrent video fetches (optimized for 8-core system)
+MAX_CONCURRENT_VIDEOS = 5  # Maximum concurrent video fetches
 ASYNC_TIMEOUT_SECONDS = 30  # Timeout for individual video fetches
 SEMAPHORE_LIMIT = 10  # Limit concurrent operations to prevent overwhelming yt-dlp
 
