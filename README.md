@@ -86,7 +86,33 @@ CREATE TABLE channel_upload_stats (
 );
 ```
 
-### 3. Frontend Setup
+### 3. Security Setup (Row Level Security)
+
+Apply RLS policies to secure your database:
+
+```sql
+-- Enable RLS on both tables
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE channel_upload_stats ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read access (for search functionality)
+CREATE POLICY "Public read access for documents" ON documents
+    FOR SELECT USING (true);
+
+CREATE POLICY "Public read access for channel stats" ON channel_upload_stats
+    FOR SELECT USING (true);
+
+-- Restrict write access to authenticated users only
+CREATE POLICY "Authenticated write access for documents" ON documents
+    FOR ALL USING (auth.role() != 'anon');
+
+CREATE POLICY "Authenticated write access for channel stats" ON channel_upload_stats
+    FOR ALL USING (auth.role() != 'anon');
+```
+
+For complete RLS policies, see `docs/rls-policies.sql`.
+
+### 4. Frontend Setup
 
 ```bash
 # Install dependencies
@@ -96,12 +122,13 @@ npm install
 cp .env.example .env.local
 # Add your Supabase URL and anon key
 # Add your HuggingFace Space URL (or use local embedding)
+# Add your Supabase service role key (required for crawler)
 
 # Run development server
 npm run dev
 ```
 
-### 4. Crawler Setup
+### 5. Crawler Setup
 
 ```bash
 cd crawler
@@ -116,7 +143,7 @@ python crawler.py
 python crawler.py --manual
 ```
 
-### 5. Embedding Service (Optional)
+### 6. Embedding Service (Optional)
 
 Deploy to HuggingFace Spaces or run locally:
 
@@ -162,19 +189,32 @@ youtube-search/
 
 ## 🔧 Configuration
 
-**Frontend** (`.env.local`):
+**Environment Variables** (`.env.local`):
 ```env
+# Frontend configuration
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 NEXT_PUBLIC_HUGGING_FACE_SPACE_URL=your_hf_space_url
+
+# Crawler configuration (for data insertion)
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
-**Crawler** (`crawler/config.py`):
+**Security Model**:
+- **Frontend**: Uses `NEXT_PUBLIC_SUPABASE_ANON_KEY` for read-only access (search functionality)
+- **Crawler**: Uses `SUPABASE_SERVICE_ROLE_KEY` for write access (adding new videos)
+- **RLS Policies**: Ensure public users can only read data, not modify it
+
+**Crawler Settings** (`crawler/config.py`):
 ```python
 MAX_CONCURRENT_VIDEOS = 8      # Adjust for your CPU
 EMBEDDING_BATCH_SIZE = 16      # Adjust for your RAM
 VIDEO_LIMIT_PER_CHANNEL = 20   # Videos per channel
 SUPABASE_ENABLED = True        # Direct database storage
+
+# Security settings
+SUPABASE_USE_ANON_KEY_FOR_READS = True     # Use anon key for read operations
+SUPABASE_REQUIRE_SERVICE_KEY_FOR_WRITES = True  # Use service key for writes
 ```
 
 ## 🛠️ Tech Stack
