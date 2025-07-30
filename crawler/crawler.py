@@ -3,18 +3,29 @@ YouTube Channel Crawler with Embedding Generation
 
 This script crawls YouTube channels to extract video metadata and immediately 
 generates semantic embeddings for each video using:
-- yt-dlp for video metadata extraction
+- yt-dlp for video metadata extraction and channel searching
 - sentence-transformers for embedding generation
 - SmolLM2 for content extraction from descriptions
+
+The script has two modes:
+
+1. AUTOMATED MODE (default):
+   Searches for channels using predefined queries and processes them automatically.
+   Tracks processed channels to avoid duplicates.
+   
+   Usage: python crawler.py
+
+2. MANUAL MODE:
+   Prompts for a single channel URL to process.
+   
+   Usage: python crawler.py --manual
 
 The output includes video metadata along with embedding vectors that can be 
 used for semantic search.
 
-Usage:
-    python crawler.py
-
-Dependencies:
-    Install requirements: pip install -r requirements.txt
+Files generated:
+- youtube_videos_with_embeddings.json: Video data with embeddings
+- processed_channels.json: Tracking of processed channels (automated mode only)
 """
 
 import yt_dlp
@@ -26,12 +37,93 @@ from typing import Dict, List
 import os
 from tqdm.auto import tqdm
 import torch
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def get_video_urls_from_channel(url: str, limit: int = 50) -> List[str]:
+def search_channels_by_query(query: str, max_channels: int = 5) -> List[Dict]:
+    """Search for channels using a query and return channel information"""
+    ydl_opts = {
+        'extract_flat': True,
+        'skip_download': True,
+        'quiet': True,
+        'playlistend': max_channels * 3,  # Get more results to filter channels
+    }
+    
+    search_url = f"ytsearch{max_channels * 10}:{query}"  # Search for more results to find channels
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(search_url, download=False)
+            
+            channels = []
+            seen_channels = set()
+            
+            entries = info.get('entries', [])
+            for entry in entries:
+                if len(channels) >= max_channels:
+                    break
+                    
+                channel_url = entry.get('channel_url')
+                channel_id = entry.get('channel_id')
+                uploader = entry.get('uploader')
+                
+                if channel_url and channel_id and channel_id not in seen_channels:
+                    seen_channels.add(channel_id)
+                    channels.append({
+                        'channel_url': channel_url,
+                        'channel_id': channel_id,
+                        'channel_name': uploader,
+                        'found_via_query': query,
+                        'sample_video_title': entry.get('title', '')
+                    })
+            
+            logger.info(f"Found {len(channels)} unique channels for query: '{query}'")
+            return channels
+            
+    except Exception as e:
+        logger.error(f"Error searching for channels with query '{query}': {e}")
+        return []
+
+def load_processed_channels() -> Dict:
+    """Load the list of already processed channels"""
+    try:
+        with open("./crawler/processed_channels.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.info("No processed_channels.json found, starting fresh")
+        return {}
+    except Exception as e:
+        logger.error(f"Error loading processed channels: {e}")
+        return {}
+
+def save_processed_channels(processed_channels: Dict):
+    """Save the list of processed channels"""
+    try:
+        with open("./crawler/processed_channels.json", "w", encoding="utf-8") as f:
+            json.dump(processed_channels, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving processed channels: {e}")
+
+def is_channel_processed(channel_id: str, processed_channels: Dict) -> bool:
+    """Check if a channel has already been processed"""
+    return channel_id in processed_channels
+
+def mark_channel_processed(channel_info: Dict, processed_channels: Dict, video_count: int):
+    """Mark a channel as processed with metadata"""
+    channel_id = channel_info['channel_id']
+    processed_channels[channel_id] = {
+        'channel_url': channel_info['channel_url'],
+        'channel_name': channel_info['channel_name'],
+        'found_via_query': channel_info['found_via_query'],
+        'processed_date': datetime.now().isoformat(),
+        'video_count': video_count,
+        'status': 'processed'
+    }
+
+def get_video_urls_from_channel(url: str, limit: int = 50) -> Dict:
     ydl_opts = {
         'extract_flat': True,
         'skip_download': True,
@@ -40,7 +132,6 @@ def get_video_urls_from_channel(url: str, limit: int = 50) -> List[str]:
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
-        save_to_json(info, "./crawler/youtube_info.json")
 
         channel_url = info.get('channel_url')
         
@@ -318,36 +409,45 @@ Main content:"""
             logger.error(f"Error generating embedding: {str(e)}")
             return []
 
-if __name__ == "__main__":
-    url = input("Enter YouTube channel URL: ").strip()
-    limit = 10
+def process_channel_videos(channel_info: Dict, embedder: VideoEmbedder, video_limit: int = 10) -> List[Dict]:
+    """Process all videos from a channel and generate embeddings"""
+    channel_url = channel_info['channel_url']
+    channel_name = channel_info['channel_name']
     
-    # Initialize the embedder (this loads the models)
-    logger.info("🚀 Initializing video embedder...")
-    embedder = VideoEmbedder()
+    logger.info(f"📡 Processing channel: {channel_name} ({channel_url})")
     
     # Get video URLs from channel
-    logger.info(f"📡 Crawling channel: {url}")
-    data = get_video_urls_from_channel(url, limit)
-    channel_url = data['channel_url']
+    data = get_video_urls_from_channel(channel_url, video_limit)
     video_urls = data['video_urls']
     
-    logger.info(f"Found {len(video_urls)} videos. Fetching metadata and generating embeddings...")
+    if not video_urls:
+        logger.warning(f"No videos found for channel: {channel_name}")
+        return []
+    
+    logger.info(f"Found {len(video_urls)} videos from {channel_name}")
     
     results = []
     processed_videos = 0
     failed_videos = 0
     
     # Process videos with progress bar
-    video_progress = tqdm(video_urls, desc="Processing videos", unit="video")
+    video_progress = tqdm(video_urls, desc=f"Processing {channel_name}", unit="video")
     
     for idx, video_url in enumerate(video_progress, 1):
         video_id = video_url.split('v=')[-1] if 'v=' in video_url else 'unknown'
-        video_progress.set_description(f"Processing {idx}/{len(video_urls)}: {video_id}")
+        video_progress.set_description(f"Processing {channel_name}: {idx}/{len(video_urls)}")
         
         try:
             # Fetch video metadata
             video_metadata = fetch_video_metadata(video_url)
+            
+            # Add channel context to video metadata
+            video_metadata['source_channel'] = {
+                'channel_name': channel_name,
+                'channel_url': channel_url,
+                'channel_id': channel_info['channel_id'],
+                'found_via_query': channel_info['found_via_query']
+            }
             
             # Generate embedding text and vector
             embedding_text = embedder.create_text_for_embedding(video_metadata)
@@ -375,12 +475,124 @@ if __name__ == "__main__":
     
     video_progress.close()
     
-    # Save results
-    output = {channel_url: results}
-    output_file = "./crawler/youtube_videos_with_embeddings.json"
-    save_to_json(output, output_file)
+    logger.info(f"✅ Channel {channel_name}: {processed_videos} successful, {failed_videos} failed")
+    return results
+
+def automated_crawler():
+    """Automated crawler that searches for channels and processes them"""
     
-    logger.info(f"✅ Processing complete!")
-    logger.info(f"📊 Results: {processed_videos} successful embeddings, {failed_videos} failed out of {len(video_urls)} total videos")
-    logger.info(f"💾 Saved {len(results)} videos with embeddings to {output_file}")
-    logger.info(f"🔑 Channel key: {channel_url}")
+    # 5 broad search queries for diverse content
+    SEARCH_QUERIES = [
+        "science education tutorials",
+        "technology programming tutorials", 
+        "history documentary",
+        "cooking recipes techniques",
+        "fitness workout training"
+    ]
+    
+    MAX_CHANNELS_PER_QUERY = 3
+    VIDEO_LIMIT_PER_CHANNEL = 10
+    
+    logger.info("🤖 Starting automated YouTube crawler...")
+    
+    # Load processed channels
+    processed_channels = load_processed_channels()
+    
+    # Initialize the embedder (this loads the models)
+    logger.info("🚀 Initializing video embedder...")
+    embedder = VideoEmbedder()
+    
+    all_results = {}
+    total_channels_processed = 0
+    total_videos_processed = 0
+    
+    # Process each search query
+    for query in SEARCH_QUERIES:
+        logger.info(f"\n🔍 Searching for channels with query: '{query}'")
+        
+        # Search for channels
+        channels = search_channels_by_query(query, MAX_CHANNELS_PER_QUERY)
+        
+        if not channels:
+            logger.warning(f"No channels found for query: '{query}'")
+            continue
+        
+        # Process each channel found
+        for channel_info in channels:
+            channel_id = channel_info['channel_id']
+            channel_name = channel_info['channel_name']
+            
+            # Check if already processed
+            if is_channel_processed(channel_id, processed_channels):
+                logger.info(f"⏭️  Skipping already processed channel: {channel_name}")
+                continue
+            
+            # Process channel videos
+            try:
+                video_results = process_channel_videos(channel_info, embedder, VIDEO_LIMIT_PER_CHANNEL)
+                
+                if video_results:
+                    # Store results with channel URL as key
+                    channel_url = channel_info['channel_url']
+                    all_results[channel_url] = video_results
+                    
+                    # Mark as processed
+                    mark_channel_processed(channel_info, processed_channels, len(video_results))
+                    total_channels_processed += 1
+                    total_videos_processed += len(video_results)
+                    
+                    logger.info(f"✅ Completed processing channel: {channel_name} ({len(video_results)} videos)")
+                else:
+                    logger.warning(f"❌ No videos extracted from channel: {channel_name}")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to process channel {channel_name}: {e}")
+                continue
+    
+    # Save all results
+    output_file = "./crawler/youtube_videos_with_embeddings.json"
+    save_to_json(all_results, output_file)
+    
+    # Save processed channels
+    save_processed_channels(processed_channels)
+    
+    # Final summary
+    logger.info(f"\n🎉 Automated crawling complete!")
+    logger.info(f"📊 Processed {total_channels_processed} channels")
+    logger.info(f"📹 Total videos with embeddings: {total_videos_processed}")
+    logger.info(f"💾 Results saved to: {output_file}")
+    logger.info(f"📝 Channel tracking saved to: ./crawler/processed_channels.json")
+
+if __name__ == "__main__":
+    import sys
+    
+    if len(sys.argv) > 1 and sys.argv[1] == "--manual":
+        # Manual mode: ask for channel URL (legacy behavior)
+        url = input("Enter YouTube channel URL: ").strip()
+        limit = 10
+        
+        # Initialize the embedder
+        logger.info("🚀 Initializing video embedder...")
+        embedder = VideoEmbedder()
+        
+        # Create channel info dict for manual processing
+        channel_info = {
+            'channel_url': url,
+            'channel_name': 'Manual Input',
+            'channel_id': 'manual',
+            'found_via_query': 'manual_input'
+        }
+        
+        # Process the channel
+        results = process_channel_videos(channel_info, embedder, limit)
+        
+        # Save results
+        output = {url: results}
+        output_file = "./crawler/youtube_videos_with_embeddings.json"
+        save_to_json(output, output_file)
+        
+        logger.info(f"✅ Manual processing complete!")
+        logger.info(f"💾 Saved {len(results)} videos to {output_file}")
+    else:
+        # Automated mode (default)
+        automated_crawler()
