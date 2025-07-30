@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { SearchInterface } from '@/components/SearchInterface';
+import { AnalyticsPanel } from '@/components/AnalyticsPanel';
 import { SearchResult } from '@/lib/types';
 import { searchDocuments } from '@/lib/search';
 import Image from 'next/image';
@@ -63,6 +64,9 @@ export default function Home() {
           />
         </div>
       </main>
+
+      {/* Analytics Panel - stays in bottom right */}
+      <AnalyticsPanel />
     </div>
   );
 }
