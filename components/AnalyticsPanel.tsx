@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { fetchAnalyticsData, formatLastUpdatedDate, type AnalyticsData } from '@/lib/analytics';
+import { fetchAnalyticsData, formatLastAddedDate, type AnalyticsData } from '@/lib/analytics';
 
 export function AnalyticsPanel() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
@@ -88,9 +88,9 @@ export function AnalyticsPanel() {
 
           {/* Last Entry */}
           <div className="flex items-center justify-between">
-            <span className="text-muted-foreground font-medium">Last updated:</span>
+            <span className="text-muted-foreground font-medium">Last added:</span>
             <span className="font-mono text-sm font-medium">
-              {formatLastUpdatedDate(analytics.lastEntryDate)}
+              {formatLastAddedDate(analytics.lastEntryDate)}
             </span>
           </div>
 

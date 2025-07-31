@@ -70,7 +70,7 @@ export async function fetchAnalyticsData(): Promise<AnalyticsData> {
 /**
  * Formats a date string to a human-readable format (e.g., "12 May 2024")
  */
-export function formatLastUpdatedDate(dateString: string | null): string {
+export function formatLastAddedDate(dateString: string | null): string {
   if (!dateString) return 'No entries';
   
   try {
