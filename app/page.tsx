@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { SearchInterface } from '@/components/SearchInterface';
 import { AnalyticsPanel } from '@/components/AnalyticsPanel';
 import { SearchResult } from '@/lib/types';
@@ -10,11 +11,34 @@ import Image from 'next/image';
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [currentQuery, setCurrentQuery] = useState('');
+  
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Handle initial query from URL and update page title
+  useEffect(() => {
+    const urlQuery = searchParams.get('q');
+    if (urlQuery) {
+      setCurrentQuery(urlQuery);
+      setHasSearched(true);
+      document.title = `${urlQuery} | YouTube Search`;
+    } else {
+      document.title = 'YouTube Search';
+    }
+  }, [searchParams]);
 
   const handleSearch = async (query: string, offset: number = 0): Promise<SearchResult[]> => {
     setIsLoading(true);
     if (offset === 0) {
       setHasSearched(true);
+      setCurrentQuery(query);
+      
+      // Update URL and page title
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.set('q', query);
+      router.push(newUrl.pathname + newUrl.search, { scroll: false });
+      document.title = `${query} | YouTube Search`;
     }
     try {
       const results = await searchDocuments({ query, limit: 10, offset_count: offset });
@@ -25,6 +49,15 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleLogoClick = () => {
+    setHasSearched(false);
+    setCurrentQuery('');
+    
+    // Clear URL query parameter and reset title
+    router.push('/', { scroll: false });
+    document.title = 'YouTube Search';
   };
 
   return (
@@ -44,7 +77,7 @@ export default function Home() {
               : 'mb-12'
           }`}>
             <div className="space-y-4">
-              <div className="flex justify-center items-center gap-4">
+              <div onClick={handleLogoClick} className="flex justify-center items-center gap-4 cursor-pointer">
                 <Image src="/logo.png" alt="YouTube Search" width={100} height={100} />
                 <h1 className={`font-bold transition-all duration-700 ease-in-out text-5xl`}>
                   YouTube Search
@@ -61,6 +94,8 @@ export default function Home() {
             isLoading={isLoading} 
             hasSearched={hasSearched}
             onSearchStart={() => setHasSearched(true)}
+            initialQuery={currentQuery}
+            onReset={handleLogoClick}
           />
         </div>
       </main>

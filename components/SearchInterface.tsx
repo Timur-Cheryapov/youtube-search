@@ -11,9 +11,11 @@ interface SearchInterfaceProps {
   isLoading: boolean;
   hasSearched: boolean;
   onSearchStart: () => void;
+  initialQuery: string;
+  onReset: () => void;
 }
 
-export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStart }: SearchInterfaceProps) {
+export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStart, initialQuery, onReset }: SearchInterfaceProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [currentOffset, setCurrentOffset] = useState(0);
@@ -22,23 +24,54 @@ export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStar
   const [currentQuery, setCurrentQuery] = useState('');
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim()) return;
+  // Handle initial query from URL
+  useEffect(() => {
+    if (initialQuery && initialQuery !== query) {
+      setQuery(initialQuery);
+      setCurrentQuery(initialQuery);
+      
+      // Auto-search if we have an initial query
+      if (initialQuery.trim() && hasSearched) {
+        performSearch(initialQuery.trim());
+      }
+    } else if (!initialQuery) {
+      // Reset when no initial query (logo clicked)
+      setQuery('');
+      setResults([]);
+      setCurrentQuery('');
+      setCurrentOffset(0);
+      setHasMoreResults(true);
+    }
+  }, [initialQuery, hasSearched]);
 
-    // Reset pagination state for new search
-    setCurrentOffset(0);
-    setHasMoreResults(true);
-    setCurrentQuery(query.trim());
-    onSearchStart();
+  const performSearch = async (searchQuery: string, offset: number = 0) => {
+    if (offset === 0) {
+      setCurrentOffset(0);
+      setHasMoreResults(true);
+      setCurrentQuery(searchQuery);
+    }
     
-    const searchResults = await onSearch(query.trim(), 0);
-    setResults(searchResults);
+    const searchResults = await onSearch(searchQuery, offset);
+    
+    if (offset === 0) {
+      setResults(searchResults);
+    } else {
+      setResults(prev => [...prev, ...searchResults]);
+      setCurrentOffset(offset);
+    }
     
     // If we got less than the limit (10), there are no more results
     if (searchResults.length < 10) {
       setHasMoreResults(false);
     }
+  };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!query.trim()) return;
+
+    onSearchStart();
+    await performSearch(query.trim(), 0);
   };
 
   const loadMoreResults = useCallback(async () => {
@@ -48,19 +81,7 @@ export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStar
     const nextOffset = currentOffset + 10;
     
     try {
-      const moreResults = await onSearch(currentQuery, nextOffset);
-      
-      if (moreResults.length === 0) {
-        setHasMoreResults(false);
-      } else {
-        setResults(prev => [...prev, ...moreResults]);
-        setCurrentOffset(nextOffset);
-        
-        // If we got less than the limit, there are no more results
-        if (moreResults.length < 10) {
-          setHasMoreResults(false);
-        }
-      }
+      await performSearch(currentQuery, nextOffset);
     } catch (error) {
       console.error('Error loading more results:', error);
     } finally {
@@ -117,7 +138,7 @@ export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStar
               disabled={isLoading || !query.trim()}
               className="absolute right-2 h-12 w-12 rounded-full bg-white text-black flex items-center justify-center transition-colors duration-200 cursor-pointer"
             >
-              {isLoading ? (
+              {isLoading && hasSearched ? (
                 <Loader2 className="h-6 w-6 animate-spin" />
               ) : (
                 <Search className="h-6 w-6" />
