@@ -12,10 +12,9 @@ interface SearchInterfaceProps {
   hasSearched: boolean;
   onSearchStart: () => void;
   initialQuery: string;
-  onReset: () => void;
 }
 
-export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStart, initialQuery, onReset }: SearchInterfaceProps) {
+export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStart, initialQuery }: SearchInterfaceProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [currentOffset, setCurrentOffset] = useState(0);
@@ -24,27 +23,7 @@ export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStar
   const [currentQuery, setCurrentQuery] = useState('');
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Handle initial query from URL
-  useEffect(() => {
-    if (initialQuery && initialQuery !== query) {
-      setQuery(initialQuery);
-      setCurrentQuery(initialQuery);
-      
-      // Auto-search if we have an initial query
-      if (initialQuery.trim() && hasSearched) {
-        performSearch(initialQuery.trim());
-      }
-    } else if (!initialQuery) {
-      // Reset when no initial query (logo clicked)
-      setQuery('');
-      setResults([]);
-      setCurrentQuery('');
-      setCurrentOffset(0);
-      setHasMoreResults(true);
-    }
-  }, [initialQuery, hasSearched]);
-
-  const performSearch = async (searchQuery: string, offset: number = 0) => {
+  const performSearch = useCallback(async (searchQuery: string, offset: number = 0) => {
     if (offset === 0) {
       setCurrentOffset(0);
       setHasMoreResults(true);
@@ -64,7 +43,27 @@ export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStar
     if (searchResults.length < 10) {
       setHasMoreResults(false);
     }
-  };
+  }, [onSearch]);
+
+  // Handle initial query from URL
+  useEffect(() => {
+    if (initialQuery && initialQuery !== query) {
+      setQuery(initialQuery);
+      setCurrentQuery(initialQuery);
+      
+      // Auto-search if we have an initial query
+      if (initialQuery.trim() && hasSearched) {
+        performSearch(initialQuery.trim());
+      }
+    } else if (!initialQuery) {
+      // Reset when no initial query (logo clicked)
+      setQuery('');
+      setResults([]);
+      setCurrentQuery('');
+      setCurrentOffset(0);
+      setHasMoreResults(true);
+    }
+  }, [initialQuery, hasSearched, performSearch]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,7 +86,7 @@ export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStar
     } finally {
       setIsLoadingMore(false);
     }
-  }, [isLoadingMore, hasMoreResults, currentQuery, currentOffset, onSearch]);
+  }, [isLoadingMore, hasMoreResults, currentQuery, currentOffset, performSearch]);
 
   // Infinite scroll handler
   const handleScroll = useCallback(() => {

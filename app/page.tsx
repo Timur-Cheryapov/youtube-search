@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SearchInterface } from '@/components/SearchInterface';
 import { AnalyticsPanel } from '@/components/AnalyticsPanel';
@@ -8,7 +8,7 @@ import { SearchResult } from '@/lib/types';
 import { searchDocuments } from '@/lib/search';
 import Image from 'next/image';
 
-export default function Home() {
+function HomeContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [currentQuery, setCurrentQuery] = useState('');
@@ -79,11 +79,11 @@ export default function Home() {
             <div className="space-y-4">
               <div onClick={handleLogoClick} className="flex justify-center items-center gap-4 cursor-pointer">
                 <Image src="/logo.png" alt="YouTube Search" width={100} height={100} />
-                <h1 className={`font-bold transition-all duration-700 ease-in-out text-5xl`}>
+                <h1 className={`font-bold transition-all duration-700 ease-out text-5xl`}>
                   YouTube Search
                 </h1>  
               </div>
-              <p className={`text-muted-foreground max-w-2xl mx-auto transition-all duration-700 ease-in-out text-xl`}>
+              <p className={`text-muted-foreground max-w-2xl mx-auto transition-all duration-700 ease-out text-xl`}>
                 AI-powered video discovery using natural language. Search through YouTube videos by content meaning, not just titles.
               </p>
             </div>
@@ -95,7 +95,6 @@ export default function Home() {
             hasSearched={hasSearched}
             onSearchStart={() => setHasSearched(true)}
             initialQuery={currentQuery}
-            onReset={handleLogoClick}
           />
         </div>
       </main>
@@ -103,5 +102,21 @@ export default function Home() {
       {/* Analytics Panel - stays in bottom right */}
       <AnalyticsPanel />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Image src="/logo.png" alt="YouTube Search" width={100} height={100} className="mx-auto" />
+          <h1 className="text-5xl font-bold">YouTube Search</h1>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   );
 }
