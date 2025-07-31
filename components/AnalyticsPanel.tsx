@@ -53,7 +53,7 @@ export function AnalyticsPanel() {
   const isConnected = analytics.supabaseStatus === 'connected';
   
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed bottom-6 right-6 z-50 bg-background/80 backdrop-blur-sm border border-border/50 rounded-lg">
       <div className="p-5 min-w-[280px]">
         <div className="space-y-3 text-sm">
           {/* Supabase Status */}

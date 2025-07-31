@@ -73,7 +73,7 @@ function HomeContent() {
           {/* Logo and Description - always show but transition */}
           <div className={`text-center space-y-6 max-w-6xl mx-auto px-4 transition-all duration-700 ease-out ${
             hasSearched 
-              ? 'my-6' 
+              ? 'md:mb-6' 
               : 'mb-12'
           }`}>
             <div className="space-y-4">
@@ -83,7 +83,7 @@ function HomeContent() {
                   YouTube Search
                 </h1>  
               </div>
-              <p className={`text-muted-foreground max-w-2xl mx-auto transition-all duration-700 ease-out text-xl`}>
+              <p className={`text-muted-foreground max-w-2xl mx-auto transition-all duration-700 ease-out text-xl ${hasSearched ? 'hidden md:block' : 'block'}`}>
                 AI-powered video discovery using natural language. Search through YouTube videos by content meaning, not just titles.
               </p>
             </div>
@@ -99,8 +99,10 @@ function HomeContent() {
         </div>
       </main>
 
-      {/* Analytics Panel - stays in bottom right */}
-      <AnalyticsPanel />
+      {/* Analytics Panel - stays in bottom right, hidden on mobile */}
+      <div className="hidden md:block">
+        <AnalyticsPanel />
+      </div>
     </div>
   );
 }

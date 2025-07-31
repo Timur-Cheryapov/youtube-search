@@ -217,11 +217,11 @@ export function VideoCard({ result, index }: VideoCardProps) {
         transitionDelay: hasAnimated ? '0ms' : `${index * 150 + 200}ms`
       }}
     >
-      <div className="flex gap-6">
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
         {/* Video Thumbnail */}
         <div className="relative flex-shrink-0">
           {/* 16:9 aspect ratio container */}
-          <div className="w-112 h-63 rounded-lg overflow-hidden bg-muted">
+          <div className="w-full md:w-112 h-48 md:h-63 rounded-lg overflow-hidden bg-muted">
               <a 
                 href={youtubeUrl} 
                 target="_blank" 
@@ -249,7 +249,7 @@ export function VideoCard({ result, index }: VideoCardProps) {
         </div>
 
         {/* Video Info */}
-        <div className="flex-1 h-63 flex flex-col justify-between">
+        <div className="flex-1 md:h-63 flex flex-col justify-between">
           <div className="flex-1">
             <h3 className="font-medium text-lg leading-tight line-clamp-2 mb-2">
               {youtubeUrl ? (
