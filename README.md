@@ -2,6 +2,13 @@
 
 AI-powered YouTube video discovery using semantic search. Find videos by meaning and content, not just titles and keywords.
 
+![App Preview](/preview.gif)
+
+## 🌐 Try it out
+
+- **Live App**: [you-search-tube.netlify.app/](https://you-search-tube.netlify.app/)
+- **Embedding API**: [huggingface.co/spaces/BangloCat/you-search-tube](https://huggingface.co/spaces/BangloCat/you-search-tube)
+
 ## 🎯 What it does
 
 This application enables intelligent YouTube video search through:
@@ -227,7 +234,7 @@ SUPABASE_REQUIRE_SERVICE_KEY_FOR_WRITES = True  # Use service key for writes
 ## Licencse
 MIT License
 
-Copyright (c) 2025 Timur Cheryapov
+Copyright (c) 2025 [Timur Cheryapov](https://timur-cheryapov.github.io/)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
