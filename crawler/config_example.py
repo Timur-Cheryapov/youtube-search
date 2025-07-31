@@ -10,8 +10,8 @@ EMBEDDING_MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'
 CONTENT_EXTRACTOR_MODEL_NAME = 'HuggingFaceTB/SmolLM2-1.7B-Instruct'
 
 # Processing limits
-MAX_CHANNELS_PER_QUERY = 8
-VIDEO_LIMIT_PER_CHANNEL = 8
+MAX_CHANNELS_PER_QUERY = 12
+VIDEO_LIMIT_PER_CHANNEL = 10
 VIDEO_LIMIT_MANUAL_MODE = 10
 
 # Memory monitoring settings
@@ -39,18 +39,31 @@ SUPABASE_REQUIRE_SERVICE_KEY_FOR_WRITES = True  # Use service key for write oper
 
 # Search queries for automated mode
 SEARCH_QUERIES = [
-    "me at the zoo",
-    "popular TikTok dances and challenges",
-    "GRWM (Get Ready With Me) and daily vlogs",
-    "comedic skits and relatable teen content",
-    "mukbangs and snack reviews",
-    "rap music new releases and reactions",
-    "fashion hauls and styling tips (Gen Z)",
-    "true crime stories and mysteries explained",
-    "coding tutorials for beginners (Python, JavaScript)",
-    "storytime animation (funny/relatable)",
-    "movie trailers and fan theories",
-    "celebrity gossip and pop culture updates"
+    "ASMR for sleep and relaxation",
+    "DIY home decor ideas and crafts",
+    "meditation and mindfulness guided sessions",
+    "travel vlogs hidden gems",
+    "cooking easy weeknight meals",
+    "workout routines for beginners no equipment",
+    "educational science experiments for kids",
+    "personal finance budgeting tips",
+    "gaming walkthroughs new releases",
+    "tech reviews smartphones laptops",
+    "language learning for beginners Spanish",
+    "sustainable living zero waste tips",
+    "digital art tutorials Procreate",
+    "book recommendations fantasy sci-fi",
+    "pet care tips dog training",
+    "car repair basic maintenance",
+    "gardening tips for beginners",
+    "urban exploration abandoned places",
+    "history documentaries ancient civilizations",
+    "musical instrument tutorials guitar",
+    "photography tutorials composition lighting",
+    "drawing lessons for beginners",
+    "mental health awareness coping strategies",
+    "cryptocurrency explained for beginners",
+    "street interviews controversial topics"
 ]
 
 # Content extraction settings

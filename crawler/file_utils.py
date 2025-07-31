@@ -241,23 +241,14 @@ def load_processed_channels_from_supabase(supabase_client: Optional[SupabaseClie
     return load_processed_channels()
 
 
-def is_channel_processed_supabase(channel_url: str, supabase_client: Optional[SupabaseClient], processed_channels: Dict) -> bool:
-    """Check if channel is processed using in-memory cache (no database calls needed)"""
+def is_channel_processed_supabase(channel_url: str, supabase_client: Optional[SupabaseClient]) -> bool:
+    """Check if channel is processed by querying the database directly"""
     if supabase_client:
-        # Only check in-memory cache - we already loaded all processed channels at startup
-        # No need for expensive database lookups during processing!
-        if channel_url in processed_channels:
-            return True
-        
-        # Check by channel_id as well for backward compatibility
-        if channel_url.startswith('https://www.youtube.com/channel/'):
-            channel_id = channel_url.split('/')[-1]
-            if channel_id in processed_channels:
-                return True
-        
-        return False
+        # Check database directly for channel existence
+        return supabase_client.check_channel_processed(channel_url)
     
-    # Fall back to JSON-based check (extract channel_id from URL for compatibility)
+    # Fall back to JSON-based check (need to load processed channels first)
+    processed_channels = load_processed_channels()
     if channel_url.startswith('https://www.youtube.com/channel/'):
         channel_id = channel_url.split('/')[-1]
         return is_channel_processed(channel_id, processed_channels)
@@ -265,32 +256,16 @@ def is_channel_processed_supabase(channel_url: str, supabase_client: Optional[Su
     return False
 
 
-def mark_channel_processed_supabase(channel_info: Dict, video_count: int, supabase_client: Optional[SupabaseClient], processed_channels: Dict):
-    """Mark channel as processed in memory cache (Supabase stats already saved during upload)"""
+def mark_channel_processed_supabase(channel_info: Dict, video_count: int, supabase_client: Optional[SupabaseClient]):
+    """Mark channel as processed (channel stats should already be saved during upload for Supabase)"""
     if supabase_client:
-        try:
-            # Channel stats already saved during upload - just update in-memory cache
-            channel_url = channel_info['channel_url']
-            channel_id = channel_info['channel_id']
-            
-            channel_data = {
-                'channel_url': channel_url,
-                'channel_name': channel_info['channel_name'],
-                'video_count': video_count,
-                'status': 'processed',
-                'source': 'supabase'
-            }
-            
-            # Store by both URL and ID for fast lookups
-            processed_channels[channel_url] = channel_data
-            processed_channels[channel_id] = channel_data
-            
-            logger.debug(f"📝 Updated in-memory cache for processed channel: {channel_info['channel_name']}")
-            return
-            
-        except Exception as e:
-            logger.error(f"❌ Error updating in-memory cache: {e}")
-            logger.info("📝 Falling back to JSON file...")
+        # For Supabase mode, channel stats are already saved during the upload process
+        # via save_channel_stats() in the upload_channel_to_supabase function
+        # No additional action needed since database is the source of truth
+        logger.debug(f"📝 Channel {channel_info['channel_name']} already marked as processed during upload")
+        return
     
-    # Fall back to JSON file
+    # Fall back to JSON file for non-Supabase mode
+    processed_channels = load_processed_channels()
     mark_channel_processed(channel_info, processed_channels, video_count)
+    save_processed_channels(processed_channels)

@@ -45,3 +45,6 @@ next-env.d.ts
 
 # crawler cache
 /crawler/__pycache__
+
+# crawler config
+/crawler/config.py

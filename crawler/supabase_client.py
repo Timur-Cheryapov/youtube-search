@@ -260,10 +260,7 @@ class SupabaseClient:
             return False
     
     def check_channel_processed(self, channel_url: str) -> bool:
-        """Check if a channel has already been processed (deprecated - use in-memory cache instead)"""
-        # This method is now deprecated - we should use the in-memory cache loaded at startup
-        # to avoid unnecessary database calls during processing
-        logger.warning(f"⚠️  Using deprecated check_channel_processed method for {channel_url}")
+        """Check if a channel has already been processed by querying the database directly"""
         try:
             # Use read client for checking channel status
             client_to_use = self.read_client or self.write_client
