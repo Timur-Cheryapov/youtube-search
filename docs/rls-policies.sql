@@ -59,6 +59,32 @@ CREATE POLICY "Authenticated delete access for channel stats" ON channel_upload_
     USING (auth.role() != 'anon');
 
 -- ==========================================
+-- QUERY_ANALYTICS TABLE POLICIES
+-- ==========================================
+
+-- Enable RLS on query_analytics table
+ALTER TABLE query_analytics ENABLE ROW LEVEL SECURITY;
+
+-- Allow public insert access for tracking (anonymous users can log queries)
+CREATE POLICY "Public insert access for query analytics" ON query_analytics
+    FOR INSERT 
+    WITH CHECK (true);
+
+-- Allow authenticated read access to analytics
+CREATE POLICY "Authenticated read access for query analytics" ON query_analytics
+    FOR SELECT 
+    USING (auth.role() != 'anon');
+
+-- Deny update/delete for everyone except service role
+CREATE POLICY "Service role only update access for query analytics" ON query_analytics
+    FOR UPDATE 
+    USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role only delete access for query analytics" ON query_analytics
+    FOR DELETE 
+    USING (auth.role() = 'service_role');
+
+-- ==========================================
 -- VERIFICATION QUERIES
 -- ==========================================
 

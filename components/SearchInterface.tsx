@@ -1,46 +1,64 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { SearchResult } from '@/lib/types';
+import { SearchResponse, SearchResult } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { VideoCard } from '@/components/VideoCard';
 import { Search, Loader2 } from 'lucide-react';
+import { rateQuery } from '@/lib/search';
+import { RatingBar } from '@/components/RatingBar';
 
 interface SearchInterfaceProps {
-  onSearch: (query: string, offset?: number) => Promise<SearchResult[]>;
+  onSearch: (query: string, offset?: number) => Promise<SearchResponse>;
   isLoading: boolean;
   hasSearched: boolean;
   onSearchStart: () => void;
   initialQuery: string;
+  trackingId?: string;
 }
 
-export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStart, initialQuery }: SearchInterfaceProps) {
+export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStart, initialQuery, trackingId }: SearchInterfaceProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [currentOffset, setCurrentOffset] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreResults, setHasMoreResults] = useState(true);
   const [currentQuery, setCurrentQuery] = useState('');
+  const [showRating, setShowRating] = useState(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const ratingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const performSearch = useCallback(async (searchQuery: string, offset: number = 0) => {
     if (offset === 0) {
       setCurrentOffset(0);
       setHasMoreResults(true);
       setCurrentQuery(searchQuery);
+      setShowRating(false);
+      
+      // Clear any existing rating timer
+      if (ratingTimeoutRef.current) {
+        clearTimeout(ratingTimeoutRef.current);
+      }
     }
     
-    const searchResults = await onSearch(searchQuery, offset);
+    const searchResponse = await onSearch(searchQuery, offset);
     
     if (offset === 0) {
-      setResults(searchResults);
+      setResults(searchResponse.results);
+      
+      // Start 5-second timer for rating popup if we have results
+      if (searchResponse.results.length > 0) {
+        ratingTimeoutRef.current = setTimeout(() => {
+          setShowRating(true);
+        }, 5000);
+      }
     } else {
-      setResults(prev => [...prev, ...searchResults]);
+      setResults(prev => [...prev, ...searchResponse.results]);
       setCurrentOffset(offset);
     }
     
     // If we got less than the limit (10), there are no more results
-    if (searchResults.length < 10) {
+    if (searchResponse.results.length < 10) {
       setHasMoreResults(false);
     }
   }, [onSearch]);
@@ -87,6 +105,27 @@ export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStar
       setIsLoadingMore(false);
     }
   }, [isLoadingMore, hasMoreResults, currentQuery, currentOffset, performSearch]);
+
+  // Rating handlers
+  const handleRating = async (rating: 'good' | 'bad') => {
+    if (!trackingId) return;
+
+    try {
+      await rateQuery(trackingId, rating);
+      setShowRating(false);
+    } catch (error) {
+      console.error('Failed to submit rating:', error);
+    }
+  };
+
+  // Cleanup rating timer on unmount
+  useEffect(() => {
+    return () => {
+      if (ratingTimeoutRef.current) {
+        clearTimeout(ratingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Infinite scroll handler
   const handleScroll = useCallback(() => {
@@ -146,6 +185,12 @@ export function SearchInterface({ onSearch, isLoading, hasSearched, onSearchStar
           </div>
         </form>
       </div>
+
+      {/* Rating Section - appears between search bar and results */}
+      <RatingBar 
+        showRating={showRating}
+        handleRating={handleRating}
+      />
 
       {/* Results */}
       {hasSearched && (

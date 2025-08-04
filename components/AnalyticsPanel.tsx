@@ -29,10 +29,7 @@ export function AnalyticsPanel() {
 
     loadAnalytics();
     
-    // Refresh analytics every 30 seconds
-    const interval = setInterval(loadAnalytics, 30000);
-    
-    return () => clearInterval(interval);
+    return;
   }, []);
 
   if (isLoading) {

@@ -8,19 +8,10 @@ export interface Document {
 
 export interface SearchResult extends Document {
   similarity: number;
-}
-
-export interface EmbeddingResponse {
-  embedding: number[];
-}
-
-export interface SearchRequest {
-  query: string;
-  limit?: number;
+  tracking_id?: string;
 }
 
 export interface SearchResponse {
   results: SearchResult[];
-  query: string;
-  total: number;
-} 
+  trackingId?: string;
+}

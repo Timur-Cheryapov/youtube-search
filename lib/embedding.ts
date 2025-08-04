@@ -41,7 +41,7 @@ export async function testHuggingFaceConnection(): Promise<boolean> {
     });
     clearTimeout(timeout);
     return response.ok;
-  } catch (error) {
+  } catch {
     clearTimeout(timeout);
     return false;
   }

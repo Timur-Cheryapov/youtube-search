@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SearchInterface } from '@/components/SearchInterface';
 import { AnalyticsPanel } from '@/components/AnalyticsPanel';
-import { SearchResult } from '@/lib/types';
+import { SearchResponse } from '@/lib/types';
 import { searchDocuments } from '@/lib/search';
 import Image from 'next/image';
 
@@ -12,6 +12,7 @@ function HomeContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [currentQuery, setCurrentQuery] = useState('');
+  const [trackingId, setTrackingId] = useState<string | undefined>(undefined);
   
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -28,7 +29,7 @@ function HomeContent() {
     }
   }, [searchParams]);
 
-  const handleSearch = async (query: string, offset: number = 0): Promise<SearchResult[]> => {
+  const handleSearch = async (query: string, offset: number = 0): Promise<SearchResponse> => {
     setIsLoading(true);
     if (offset === 0) {
       setHasSearched(true);
@@ -41,11 +42,14 @@ function HomeContent() {
       document.title = `${query} | YouTube Search`;
     }
     try {
-      const results = await searchDocuments({ query, limit: 10, offset_count: offset });
-      return results;
+      const { results, trackingId: newTrackingId } = await searchDocuments({ query, limit: 10, offset_count: offset });
+      if (offset === 0) {
+        setTrackingId(newTrackingId);
+      }
+      return { results, trackingId: newTrackingId };
     } catch (error) {
       console.error('Search error:', error);
-      return [];
+      return { results: [], trackingId: undefined };
     } finally {
       setIsLoading(false);
     }
@@ -54,6 +58,7 @@ function HomeContent() {
   const handleLogoClick = () => {
     setHasSearched(false);
     setCurrentQuery('');
+    setTrackingId(undefined);
     
     // Clear URL query parameter and reset title
     router.push('/', { scroll: false });
@@ -95,6 +100,7 @@ function HomeContent() {
             hasSearched={hasSearched}
             onSearchStart={() => setHasSearched(true)}
             initialQuery={currentQuery}
+            trackingId={trackingId}
           />
         </div>
       </main>
