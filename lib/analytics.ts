@@ -1,9 +1,11 @@
 import { supabase } from './supabase';
+import { testHuggingFaceConnection } from './embedding';
 
 export interface AnalyticsData {
   documentCount: number;
   lastEntryDate: string | null;
   supabaseStatus: 'connected' | 'error';
+  huggingFaceStatus: 'connected' | 'error';
   error?: string;
 }
 
@@ -12,18 +14,33 @@ export interface AnalyticsData {
  */
 export async function fetchAnalyticsData(): Promise<AnalyticsData> {
   try {
-    // Test Supabase connection with a simple health check
-    const { error: healthError } = await supabase
-      .from('documents')
-      .select('id')
-      .limit(1);
+    // Test both Supabase and Hugging Face connections in parallel
+    const [supabaseResult, huggingFaceResult] = await Promise.allSettled([
+      // Test Supabase connection with a simple health check
+      supabase.from('documents').select('id').limit(1),
+      // Test Hugging Face connection
+      testHuggingFaceConnection()
+    ]);
 
-    if (healthError) {
+    // Check Supabase connection result
+    const supabaseStatus: 'connected' | 'error' = 
+      supabaseResult.status === 'fulfilled' && !supabaseResult.value.error ? 'connected' : 'error';
+    
+    // Check Hugging Face connection result
+    const huggingFaceStatus: 'connected' | 'error' = 
+      huggingFaceResult.status === 'fulfilled' && huggingFaceResult.value ? 'connected' : 'error';
+
+    if (supabaseStatus === 'error') {
+      const error = supabaseResult.status === 'fulfilled' 
+        ? supabaseResult.value.error?.message 
+        : 'Connection failed';
+      
       return {
         documentCount: 0,
         lastEntryDate: null,
         supabaseStatus: 'error',
-        error: healthError.message
+        huggingFaceStatus,
+        error
       };
     }
 
@@ -37,6 +54,7 @@ export async function fetchAnalyticsData(): Promise<AnalyticsData> {
         documentCount: 0,
         lastEntryDate: null,
         supabaseStatus: 'error',
+        huggingFaceStatus,
         error: countError.message
       };
     }
@@ -53,6 +71,7 @@ export async function fetchAnalyticsData(): Promise<AnalyticsData> {
       documentCount: count || 0,
       lastEntryDate: lastEntry?.created_at || null,
       supabaseStatus: 'connected',
+      huggingFaceStatus,
       error: lastEntryError?.message
     };
 
@@ -62,6 +81,7 @@ export async function fetchAnalyticsData(): Promise<AnalyticsData> {
       documentCount: 0,
       lastEntryDate: null,
       supabaseStatus: 'error',
+      huggingFaceStatus: 'error',
       error: error instanceof Error ? error.message : 'Unknown error'
     };
   }

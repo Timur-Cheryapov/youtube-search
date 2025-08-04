@@ -23,3 +23,26 @@ export async function callHuggingFaceEmbedding(text: string): Promise<number[]> 
   const data = await response.json();
   return data.embedding;
 }
+
+export async function testHuggingFaceConnection(): Promise<boolean> {
+  const HF_SPACE_URL = process.env.NEXT_PUBLIC_HUGGING_FACE_SPACE_URL;
+
+  if (!HF_SPACE_URL) throw new Error('NEXT_PUBLIC_HUGGING_FACE_SPACE_URL is not set');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const response = await fetch(`${HF_SPACE_URL}/api/embed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Hello, world!' }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return response.ok;
+  } catch (error) {
+    clearTimeout(timeout);
+    return false;
+  }
+}

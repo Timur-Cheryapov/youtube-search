@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { fetchAnalyticsData, formatLastAddedDate, type AnalyticsData } from '@/lib/analytics';
+import { StatusBadge } from './StatusBadge';
 
 export function AnalyticsPanel() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
@@ -18,6 +19,7 @@ export function AnalyticsPanel() {
           documentCount: 0,
           lastEntryDate: null,
           supabaseStatus: 'error',
+          huggingFaceStatus: 'error',
           error: 'Failed to load'
         });
       } finally {
@@ -50,33 +52,17 @@ export function AnalyticsPanel() {
     return null;
   }
 
-  const isConnected = analytics.supabaseStatus === 'connected';
+  const isSupabaseConnected = analytics.supabaseStatus === 'connected';
+  const isHuggingFaceConnected = analytics.huggingFaceStatus === 'connected';
   
   return (
     <div className="fixed bottom-6 right-6 z-50 bg-background/80 backdrop-blur-sm border border-border/50 rounded-lg">
       <div className="p-5 min-w-[280px]">
         <div className="space-y-3 text-sm">
-          {/* Supabase Status */}
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground font-medium">Supabase:</span>
-            <div className={`h-6 px-3 text-sm rounded-md flex items-center ${
-              isConnected 
-                ? 'bg-green-100 text-green-800 border border-green-200' 
-                : 'bg-red-100 text-red-800 border border-red-200'
-            }`}>
-              {isConnected ? (
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-green-500 rounded-full" />
-                  <span>Connected</span>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-red-500 rounded-full" />
-                  <span>Error</span>
-                </div>
-              )}
-            </div>
-          </div>
+          
+          <StatusBadge isConnected={isSupabaseConnected} serviceName="Supabase" />
+
+          <StatusBadge isConnected={isHuggingFaceConnected} serviceName="Hugging Face" />
 
           {/* Document Count */}
           <div className="flex items-center justify-between">
@@ -95,7 +81,7 @@ export function AnalyticsPanel() {
           </div>
 
           {/* Error message if any */}
-          {analytics.error && !isConnected && (
+          {analytics.error && !isSupabaseConnected && (
             <div className="pt-2 border-t border-red-200/50">
               <span className="text-sm text-red-600" title={analytics.error}>
                 {analytics.error.length > 35 
