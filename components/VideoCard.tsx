@@ -221,7 +221,7 @@ export function VideoCard({ result, index }: VideoCardProps) {
         {/* Video Thumbnail */}
         <div className="relative flex-shrink-0">
           {/* 16:9 aspect ratio container */}
-          <div className="w-full md:w-112 h-48 md:h-63 rounded-lg overflow-hidden bg-muted">
+          <div className="aspect-16/9 w-full md:w-112 rounded-lg overflow-hidden bg-muted">
               <a 
                 href={youtubeUrl} 
                 target="_blank" 
